@@ -1,0 +1,90 @@
+<html lang="ka">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ლუდის სახლი ჯაჭვის ხიდთან — POS</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+  <!-- Login Screen -->
+  <div id="login-screen">
+    <div class="login-card">
+      <div class="login-logo">
+        <h1>ლუდის სახლი ჯაჭვის ხიდთან</h1>
+        <p>გაყიდვების სისტემა</p>
+      </div>
+      <div id="login-error" class="login-error hidden"></div>
+      <form id="login-form" class="login-form">
+        <div class="form-group">
+          <label for="login-username">მომხმარებელი</label>
+          <input type="text" id="login-username" class="form-input" placeholder="მაგ: Mate" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="login-password">პაროლი</label>
+          <input type="password" id="login-password" class="form-input" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg">შესვლა</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app" class="hidden">
+    <!-- Sidebar -->
+    <!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <h2>ლუდის სახლი<br>ჯაჭვის ხიდთან</h2>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="#" class="nav-item active" data-page="cashier">
+      <span>სალარო</span>
+    </a>
+    <a href="#" class="nav-item" data-page="distribution">
+      <span>დისტრიბუცია</span>
+    </a>
+    <a href="#" class="nav-item" data-page="stock">
+      <span>მარაგი</span>
+    </a>
+    <a href="#" class="nav-item" data-page="shifts">
+      <span>ცვლები</span>
+    </a>
+    <a href="#" class="nav-item" data-page="history">
+      <span>ისტორია</span>
+    </a>
+  </nav>
+  <div class="sidebar-footer">
+    <button id="logout-btn" class="btn btn-secondary" style="width:100%;">
+      <span class="btn-text">გასვლა</span>
+    </button>
+  </div>
+</aside>
+    <!-- Main content area -->
+    <div class="main-wrapper">
+<header class="app-header">
+  <div class="header-left">
+    <h1>ლუდის სახლი ჯაჭვის ხიდთან</h1>
+  </div>
+  <div class="header-right">
+    <div class="header-user-info">
+      <div class="name" id="header-user">—</div>
+      <div class="meta">
+        <span id="header-role">—</span> • 
+        <span id="header-shift">—</span> • 
+        შესვლა: <span id="live-time">00:00:00</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+      <main id="main-content">
+        <!-- Dynamic content loaded here -->
+      </main>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
