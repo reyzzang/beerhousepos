@@ -36,19 +36,38 @@ export function determineShiftBlock(date = new Date()) {
 }
 
 export function login(username, password) {
-  const user = USERS[username];
-  if (!user || user.password !== password) {
+  // Make username comparison case-insensitive
+  const enteredUsername = username.trim().toLowerCase();
+
+  const actualUsername = Object.keys(USERS).find(
+    key => key.toLowerCase() === enteredUsername
+  );
+
+  if (!actualUsername) {
+    return { success: false, message: 'არასწორი მომხმარებელი ან პაროლი' };
+  }
+
+  const user = USERS[actualUsername];
+
+  if (user.password !== password) {
     return { success: false, message: 'არასწორი მომხმარებელი ან პაროლი' };
   }
 
   // ONLY login user - NO auto shift start
   localStorage.setItem('currentUser', JSON.stringify({
-    username,
+    username: actualUsername,
     name: user.name,
     role: user.role
   }));
 
-  return { success: true, user: { username, name: user.name, role: user.role } };
+  return {
+    success: true,
+    user: {
+      username: actualUsername,
+      name: user.name,
+      role: user.role
+    }
+  };
 }
 
 export function logout() {
