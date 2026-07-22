@@ -82,6 +82,13 @@ export function renderDistributionPage() {
               <option value="გადახდილია">გადახდილია</option>
             </select>
           </div>
+          <div class="form-group">
+            <label>გადახდის წყარო (საიდან გამოიფვა)</label>
+            <select id="dist-paymentsource" class="form-input" required>
+              <option value="cash_desk">კასრიდან (ნაღდი ფულით)</option>
+              <option value="admin">ადმინისტრაცია / ბარათი / სხვა</option>
+            </select>
+          </div>
           <div class="form-group full-width">
             <button type="submit" class="btn btn-primary">შენახვა</button>
           </div>
@@ -100,6 +107,7 @@ export function renderDistributionPage() {
                 <th>აღწერა</th>
                 <th>თანხა</th>
                 <th>სტატუსი</th>
+                <th>წყარო</th>
                 <th>ცვლა</th>
                 ${isAdminUser ? '<th>მოქმედება</th>' : ''}
               </tr>
@@ -126,6 +134,13 @@ export function renderDistributionPage() {
             <label>თარიღი</label>
             <input type="date" id="exp-date" class="form-input" required value="${new Date().toISOString().split('T')[0]}">
           </div>
+          <div class="form-group">
+            <label>გადახდის წყარო</label>
+            <select id="exp-paymentsource" class="form-input" required>
+              <option value="cash_desk">კასრიდან (ნაღდი ფულით)</option>
+              <option value="admin">ადმინისტრაცია / ბარათი / სხვა</option>
+            </select>
+          </div>
           <div class="form-group full-width">
             <button type="submit" class="btn btn-primary">შენახვა</button>
           </div>
@@ -141,6 +156,7 @@ export function renderDistributionPage() {
                 <th>თარიღი</th>
                 <th>აღწერა</th>
                 <th>თანხა</th>
+                <th>წყარო</th>
                 <th>ცვლა</th>
                 <th>თანამშრომელი</th>
                 ${isAdminUser ? '<th>მოქმედება</th>' : ''}
@@ -212,6 +228,13 @@ export function renderDistributionPage() {
               <option value="გადახდილია">გადახდილია</option>
             </select>
           </div>
+          <div class="form-group">
+            <label>გადახდის წყარო</label>
+            <select id="edit-dist-paymentsource" class="form-input">
+              <option value="cash_desk">კასრიდან (ნაღდი ფულით)</option>
+              <option value="admin">ადმინისტრაცია / ბარათი / სხვა</option>
+            </select>
+          </div>
           <div class="modal-actions">
             <button id="save-edit-dist-btn" class="btn btn-primary">შენახვა</button>
           </div>
@@ -238,6 +261,13 @@ export function renderDistributionPage() {
           <div class="form-group">
             <label>თარიღი</label>
             <input type="date" id="edit-exp-date" class="form-input">
+          </div>
+          <div class="form-group">
+            <label>გადახდის წყარო</label>
+            <select id="edit-exp-paymentsource" class="form-input">
+              <option value="cash_desk">კასრიდან (ნაღდი ფულით)</option>
+              <option value="admin">ადმინისტრაცია / ბარათი / სხვა</option>
+            </select>
           </div>
           <div class="modal-actions">
             <button id="save-edit-exp-btn" class="btn btn-primary">შენახვა</button>
@@ -299,6 +329,7 @@ function handleDistributionSubmit(e) {
     description: document.getElementById('dist-description').value,
     totalAmount: parseFloat(document.getElementById('dist-amount').value),
     status: document.getElementById('dist-status').value,
+    paymentSource: document.getElementById('dist-paymentsource').value,
     shiftId: shift.id,
     username: user.username,
     userName: user.name,
@@ -327,6 +358,7 @@ function handleExpenseSubmit(e) {
     description: document.getElementById('exp-description').value,
     amount: parseFloat(document.getElementById('exp-amount').value),
     date: document.getElementById('exp-date').value,
+    paymentSource: document.getElementById('exp-paymentsource').value,
     shiftId: shift.id,
     username: user.username,
     userName: user.name,
@@ -376,6 +408,7 @@ function renderDistributionsTable() {
       <td>${d.description}</td>
       <td>${d.totalAmount.toFixed(2)} ₾</td>
       <td><span class="badge ${d.status === 'გადახდილია' ? 'badge-success' : 'badge-warning'}">${d.status}</span></td>
+      <td>${d.paymentSource === 'cash_desk' ? 'კასრიდან' : 'ადმინი'}</td>
       <td>${d.userName || '-'}</td>
       ${isAdminUser ? `
         <td>
@@ -384,7 +417,7 @@ function renderDistributionsTable() {
         </td>
       ` : ''}
     </tr>
-  `).join('') || '<tr><td colspan="8" class="text-center">ჩანაწერები არ არის</td></tr>';
+  `).join('') || '<tr><td colspan="9" class="text-center">ჩანაწერები არ არის</td></tr>';
 
   if (isAdminUser) {
     tbody.querySelectorAll('.edit-dist-btn').forEach(btn => {
@@ -414,6 +447,7 @@ function renderExpensesTable() {
       <td>${e.date}</td>
       <td>${e.description}</td>
       <td>${e.amount.toFixed(2)} ₾</td>
+      <td>${e.paymentSource === 'cash_desk' ? 'კასრიდან' : 'ადმინი'}</td>
       <td>${e.userName || '-'}</td>
       <td>${e.username || '-'}</td>
       ${isAdminUser ? `
@@ -423,7 +457,7 @@ function renderExpensesTable() {
         </td>
       ` : ''}
     </tr>
-  `).join('') || '<tr><td colspan="6" class="text-center">ჩანაწერები არ არის</td></tr>';
+  `).join('') || '<tr><td colspan="7" class="text-center">ჩანაწერები არ არის</td></tr>';
 
   if (isAdminUser) {
     tbody.querySelectorAll('.edit-exp-btn').forEach(btn => {
@@ -466,6 +500,7 @@ function editDistribution(id) {
   document.getElementById('edit-dist-description').value = item.description;
   document.getElementById('edit-dist-amount').value = item.totalAmount;
   document.getElementById('edit-dist-status').value = item.status;
+  document.getElementById('edit-dist-paymentsource').value = item.paymentSource || 'cash_desk';
 
   document.getElementById('edit-dist-modal').classList.add('active');
 
@@ -489,6 +524,7 @@ function saveEditedDistribution() {
   item.description = document.getElementById('edit-dist-description').value;
   item.totalAmount = parseFloat(document.getElementById('edit-dist-amount').value);
   item.status = document.getElementById('edit-dist-status').value;
+  item.paymentSource = document.getElementById('edit-dist-paymentsource').value;
 
   saveDistributions(list);
   document.getElementById('edit-dist-modal').classList.remove('active');
@@ -509,6 +545,7 @@ function editExpense(id) {
   document.getElementById('edit-exp-description').value = item.description;
   document.getElementById('edit-exp-amount').value = item.amount;
   document.getElementById('edit-exp-date').value = item.date;
+  document.getElementById('edit-exp-paymentsource').value = item.paymentSource || 'cash_desk';
 
   document.getElementById('edit-exp-modal').classList.add('active');
 
@@ -529,6 +566,7 @@ function saveEditedExpense() {
   item.description = document.getElementById('edit-exp-description').value;
   item.amount = parseFloat(document.getElementById('edit-exp-amount').value);
   item.date = document.getElementById('edit-exp-date').value;
+  item.paymentSource = document.getElementById('edit-exp-paymentsource').value;
 
   saveExpenses(list);
   document.getElementById('edit-exp-modal').classList.remove('active');

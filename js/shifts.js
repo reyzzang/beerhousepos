@@ -1,6 +1,7 @@
 // shifts.js - Independent shift management with full admin edit/delete
 
 import { getCurrentUser, getCurrentShift, getShifts, saveShifts, calculateShiftFinancials, isAdmin, determineShiftBlock } from './auth.js';
+import { getDistributions, getExpenses } from './distribution.js';
 
 let editingShiftId = null;
 
@@ -11,6 +12,22 @@ export function renderShiftsPage() {
   const currentShift = getCurrentShift();
   const user = getCurrentUser();
   const isAdminUser = isAdmin();
+
+  let activeShiftFinancialBreakdown = '';
+  if (currentShift) {
+    const breakdown = calculateLiveShiftFinancials(currentShift);
+    activeShiftFinancialBreakdown = `
+      <div class="mt-2" style="background: rgba(0,0,0,0.03); padding: 10px; border-radius: 6px;">
+        <p><strong>მთლიანი შემოსავალი (Gross):</strong> ${(breakdown.totalSales || 0).toFixed(2)} ₾</p>
+        <p><strong>ბარათით გადახდილი:</strong> ${(breakdown.cardTotal || 0).toFixed(2)} ₾</p>
+        <p><strong>ნაღდი ფული (სულ):</strong> ${(breakdown.cashTotal || 0).toFixed(2)} ₾</p>
+        <p><strong>კასრიდან გადახდილი ხარჯები/დისტრიბუცია:</strong> -${(breakdown.cashDeskExpenses || 0).toFixed(2)} ₾</p>
+        <p><strong>ხელფასი (მითითებული):</strong> -${(currentShift.salary || 0).toFixed(2)} ₾</p>
+        <hr style="margin: 5px 0;">
+        <p style="font-size: 1.1em;"><strong>დარჩენილი სუფთა ნაღდი ფული (Net Cash):</strong> <span style="color: green; font-weight: bold;">${(breakdown.netCash || 0).toFixed(2)} ₾</span></p>
+      </div>
+    `;
+  }
 
   content.innerHTML = `
     <div class="page-header">
@@ -23,7 +40,8 @@ export function renderShiftsPage() {
         <p><strong>თანამშრომელი:</strong> ${currentShift.userName}</p>
         <p><strong>ცვლა:</strong> ${currentShift.shiftBlock?.name || '-'}</p>
         <p><strong>დაწყების დრო:</strong> ${new Date(currentShift.loginTime).toLocaleString('ka-GE')}</p>
-        <button id="end-shift-btn" class="btn btn-danger">ცვლის დასრულება</button>
+        ${activeShiftFinancialBreakdown}
+        <button id="end-shift-btn" class="btn btn-danger mt-3">ცვლის დასრულება</button>
       ` : `
         <p>მიმდინარე ცვლა არ არის აქტიური</p>
         <button id="start-shift-btn" class="btn btn-success">ცვლის დაწყება</button>
@@ -42,6 +60,10 @@ export function renderShiftsPage() {
               <th>შესვლა</th>
               <th>გასვლა</th>
               <th>ჯამი</th>
+              <th>ბარათი</th>
+              <th>ნაღდი</th>
+              <th>კასრის ხარჯი</th>
+              <th>ხელფასი</th>
               <th>ნეტო ნაღდი</th>
               <th>სტატუსი</th>
               ${isAdminUser ? '<th>მოქმედება</th>' : ''}
@@ -104,6 +126,51 @@ export function renderShiftsPage() {
   renderAllShiftsTable(isAdminUser);
 }
 
+function calculateLiveShiftFinancials(shift) {
+  // Filter sales, distributions, and expenses that belong to this shift ID
+  const sales = shift.sales || [];
+  let totalSales = 0;
+  let cardTotal = 0;
+  let cashTotal = 0;
+
+  sales.forEach(s => {
+    totalSales += (s.total || s.totalAmount || 0);
+    cardTotal += (s.cardAmount || 0);
+    cashTotal += (s.cashAmount || 0);
+  });
+
+  // Fallback if sales array inside shift is empty, check global sales mapped by shiftId
+  if (sales.length === 0) {
+    const globalSales = JSON.parse(localStorage.getItem('sales') || '[]');
+    const shiftSales = globalSales.filter(s => s.shiftId === shift.id);
+    shiftSales.forEach(s => {
+      totalSales += (s.total || s.totalAmount || 0);
+      cardTotal += (s.cardAmount || 0);
+      cashTotal += (s.cashAmount || 0);
+    });
+  }
+
+  // Calculate cash desk expenses from distributions and expenses tied to this shift where paymentSource === 'cash_desk'
+  const distributions = getDistributions().filter(d => d.shiftId === shift.id && d.paymentSource === 'cash_desk');
+  const expenses = getExpenses().filter(e => e.shiftId === shift.id && e.paymentSource === 'cash_desk');
+
+  let cashDeskExpenses = 0;
+  distributions.forEach(d => cashDeskExpenses += (d.totalAmount || 0));
+  expenses.forEach(e => cashDeskExpenses += (e.amount || 0));
+
+  const salary = shift.salary || 0;
+  const netCash = cashTotal - cashDeskExpenses - salary;
+
+  return {
+    totalSales,
+    cardTotal,
+    cashTotal,
+    cashDeskExpenses,
+    salary,
+    netCash
+  };
+}
+
 function startNewShift() {
   const user = getCurrentUser();
   if (!user) return alert('გთხოვთ შეხვიდეთ');
@@ -125,6 +192,7 @@ function startNewShift() {
     cardTotal: 0,
     cashTotal: 0,
     deductions: 0,
+    cashDeskExpenses: 0,
     salary: shiftBlock.id === 1 ? 30 : 40,
     netCash: 0,
     closed: false
@@ -148,7 +216,23 @@ function endCurrentShift() {
 
   current.logoutTime = new Date().toISOString();
   current.closed = true;
-  calculateShiftFinancials(current);
+
+  // Calculate precise financials using custom live runner
+  const financials = calculateLiveShiftFinancials(current);
+  current.totalSales = financials.totalSales;
+  current.cardTotal = financials.cardTotal;
+  current.cashTotal = financials.cashTotal;
+  current.cashDeskExpenses = financials.cashDeskExpenses;
+  current.netCash = financials.netCash;
+
+  // Also call auth's calculateShiftFinancials if it exists and handles secondary logic safely
+  if (typeof calculateShiftFinancials === 'function') {
+    try {
+      calculateShiftFinancials(current);
+    } catch (err) {
+      console.warn(err);
+    }
+  }
 
   const shifts = getShifts();
   const idx = shifts.findIndex(s => s.id === current.id);
@@ -157,7 +241,7 @@ function endCurrentShift() {
 
   localStorage.removeItem('currentShift');
 
-  alert('ცვლა დასრულდა.');
+  alert(`ცვლა დასრულდა.\nმთლიანი: ${current.totalSales.toFixed(2)} ₾\nბარათი: ${current.cardTotal.toFixed(2)} ₾\nნაღდი: ${current.cashTotal.toFixed(2)} ₾\nკასრის ხარჯი: ${current.cashDeskExpenses.toFixed(2)} ₾\nხელფასი: ${current.salary} ₾\nსუფთა ნაღდი: ${current.netCash.toFixed(2)} ₾`);
   renderShiftsPage();
 }
 
@@ -171,6 +255,17 @@ function renderAllShiftsTable(isAdminUser) {
   tbody.innerHTML = shifts.map(s => {
     const login = new Date(s.loginTime).toLocaleString('ka-GE');
     const logout = s.logoutTime ? new Date(s.logoutTime).toLocaleString('ka-GE') : '—';
+    
+    // Ensure historical shifts display proper breakdown if fields are missing
+    const breakdown = s.closed ? {
+      totalSales: s.totalSales || 0,
+      cardTotal: s.cardTotal || 0,
+      cashTotal: s.cashTotal || 0,
+      cashDeskExpenses: s.cashDeskExpenses || 0,
+      salary: s.salary || 0,
+      netCash: s.netCash || 0
+    } : calculateLiveShiftFinancials(s);
+
     return `
       <tr>
         <td>${s.date}</td>
@@ -178,8 +273,12 @@ function renderAllShiftsTable(isAdminUser) {
         <td>${s.userName}</td>
         <td>${login}</td>
         <td>${logout}</td>
-        <td>${(s.totalSales || 0).toFixed(2)} ₾</td>
-        <td>${(s.netCash || 0).toFixed(2)} ₾</td>
+        <td>${breakdown.totalSales.toFixed(2)} ₾</td>
+        <td>${breakdown.cardTotal.toFixed(2)} ₾</td>
+        <td>${breakdown.cashTotal.toFixed(2)} ₾</td>
+        <td>${breakdown.cashDeskExpenses.toFixed(2)} ₾</td>
+        <td>${breakdown.salary.toFixed(2)} ₾</td>
+        <td><strong>${breakdown.netCash.toFixed(2)} ₾</strong></td>
         <td><span class="badge ${s.closed ? 'badge-secondary' : 'badge-success'}">${s.closed ? 'დახურული' : 'აქტიური'}</span></td>
         ${isAdminUser ? `
           <td>

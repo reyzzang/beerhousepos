@@ -45,7 +45,15 @@ export function addToCart(productId, quantity = 1, customPrice = null, multiplie
 
   if (existingIdx !== -1 && product.type !== 'weight') {
     cart[existingIdx].quantity += finalQty;
-    cart[existingIdx].total = cart[existingIdx].quantity * (product.type === 'liter' ? product.price * multiplier : product.price);
+    if (product.type === 'liter') {
+      cart[existingIdx].multiplier = cart[existingIdx].quantity;
+      cart[existingIdx].name = `${product.name} x${cart[existingIdx].quantity}`;
+      cart[existingIdx].unit = `${cart[existingIdx].quantity} ლიტრი`;
+      cart[existingIdx].price = product.price * cart[existingIdx].quantity;
+      cart[existingIdx].total = cart[existingIdx].price;
+    } else {
+      cart[existingIdx].total = cart[existingIdx].quantity * product.price;
+    }
   } else {
     cart.push({
       id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
@@ -56,7 +64,7 @@ export function addToCart(productId, quantity = 1, customPrice = null, multiplie
       unit: unitLabel,
       type: product.type,
       multiplier: multiplier,
-      total: finalPrice * (product.type === 'weight' ? 1 : finalQty),
+      total: product.type === 'liter' ? (product.price * multiplier) : (finalPrice * (product.type === 'weight' ? 1 : finalQty)),
       categoryName: product.categoryName
     });
   }
@@ -76,8 +84,15 @@ export function updateCartQuantity(cartItemId, newQty) {
     removeFromCart(cartItemId);
     return;
   }
+  
   item.quantity = newQty;
-  if (item.type === 'liter') {
+  const product = getProductById(item.productId);
+
+  if (item.type === 'liter' && product) {
+    item.multiplier = newQty;
+    item.name = `${product.name} x${newQty}`;
+    item.unit = `${newQty} ლიტრი`;
+    item.price = product.price * newQty;
     item.total = item.price;
   } else {
     item.total = item.price * newQty;
@@ -104,7 +119,7 @@ export function renderCart() {
     <div class="cart-item" data-id="${item.id}">
       <div class="cart-item-info">
         <div class="cart-item-name">${item.name}</div>
-        <div class="cart-item-meta">${item.unit} • ${item.price.toFixed(2)} ₾</div>
+        <div class="cart-item-meta">${item.unit} • ${item.type === 'liter' ? (item.price / (item.quantity || 1)).toFixed(2) : item.price.toFixed(2)} ₾</div>
       </div>
       <div class="cart-item-qty">
         ${item.type !== 'weight' ? `
@@ -362,7 +377,7 @@ export function renderCashierPage() {
       </div>
     </div>
 
-    <!-- Multiplier Modal for Beers -->
+    <!-- Multiplier Modal for Beers (with manual liter input) -->
     <div class="modal" id="multiplier-modal">
       <div class="modal-content">
         <div class="modal-header">
@@ -370,8 +385,16 @@ export function renderCashierPage() {
           <button class="modal-close" data-modal="multiplier-modal">×</button>
         </div>
         <div class="modal-body">
-          <p>აირჩიეთ რაოდენობა (ლიტრი):</p>
+          <p>აირჩიეთ ან შეიყვანეთ რაოდენობა (ლიტრი):</p>
           <div class="multiplier-buttons" id="multiplier-buttons"></div>
+          
+          <div class="form-group mt-3" style="border-top: 1px solid #eee; padding-top: 15px;">
+            <label>ან ჩაწერეთ ლიტრები ხელით:</label>
+            <div style="display: flex; gap: 10px;">
+              <input type="number" id="manual-liter-input" class="form-input" step="0.1" min="0.1" placeholder="მაგ: 1.5">
+              <button id="manual-liter-confirm-btn" class="btn btn-primary">დამატება</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -515,9 +538,27 @@ function openMultiplierModal(product) {
 
   buttons.querySelectorAll('.multiplier-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      addToCart(product.id, 1, null, parseInt(btn.dataset.mult));
+      addToCart(product.id, 1, null, parseFloat(btn.dataset.mult));
       document.getElementById('multiplier-modal').classList.remove('active');
     });
+  });
+
+  // Handle manual input inside multiplier modal
+  const manualInput = document.getElementById('manual-liter-input');
+  manualInput.value = '';
+  
+  const confirmManualBtn = document.getElementById('manual-liter-confirm-btn');
+  const newManualBtn = confirmManualBtn.cloneNode(true);
+  confirmManualBtn.parentNode.replaceChild(newManualBtn, confirmManualBtn);
+
+  newManualBtn.addEventListener('click', () => {
+    const val = parseFloat(manualInput.value);
+    if (isNaN(val) || val <= 0) {
+      alert('გთხოვთ შეიყვანოთ ლიტრების სწორი რაოდენობა');
+      return;
+    }
+    addToCart(product.id, 1, null, val);
+    document.getElementById('multiplier-modal').classList.remove('active');
   });
 
   document.getElementById('multiplier-modal').classList.add('active');
