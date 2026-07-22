@@ -1,4 +1,4 @@
-// cashier.js - POS calculator, cart, weight vs. liter math
+// cashier.js - POS calculator, cart, weight vs. liter math, and dynamic weight (kg)/price calculation
 
 import { getCategoriesWithCustom, getProductById } from './products.js';
 import { getCurrentUser, getCurrentShift } from './auth.js';
@@ -15,7 +15,7 @@ export function clearCart() {
   renderCart();
 }
 
-export function addToCart(productId, quantity = 1, customPrice = null, multiplier = 1) {
+export function addToCart(productId, quantity = 1, customPrice = null, multiplier = 1, customWeightKg = null) {
   const product = getProductById(productId);
   if (!product) return;
 
@@ -31,9 +31,10 @@ export function addToCart(productId, quantity = 1, customPrice = null, multiplie
     unitLabel = `${multiplier} ლიტრი`;
   } else if (product.type === 'weight') {
     finalPrice = customPrice;
-    finalQty = 1;
-    displayName = `${product.name} (${customPrice.toFixed(2)} ₾)`;
-    unitLabel = 'კგ (ხელით)';
+    // Store weight in kilograms inside quantity for proper stock deduction
+    finalQty = customWeightKg !== null ? customWeightKg : (customPrice / product.price);
+    displayName = `${product.name} (${finalQty.toFixed(3)} კგ - ${customPrice.toFixed(2)} ₾)`;
+    unitLabel = `${finalQty.toFixed(3)} კგ`;
   }
 
   const existingIdx = cart.findIndex(item => 
@@ -60,11 +61,11 @@ export function addToCart(productId, quantity = 1, customPrice = null, multiplie
       productId: product.id,
       name: displayName,
       price: product.type === 'weight' ? finalPrice : (product.type === 'liter' ? product.price * multiplier : product.price),
-      quantity: product.type === 'weight' ? 1 : finalQty,
+      quantity: finalQty,
       unit: unitLabel,
       type: product.type,
       multiplier: multiplier,
-      total: product.type === 'liter' ? (product.price * multiplier) : (finalPrice * (product.type === 'weight' ? 1 : finalQty)),
+      total: product.type === 'liter' ? (product.price * multiplier) : finalPrice,
       categoryName: product.categoryName
     });
   }
@@ -304,7 +305,13 @@ function updateStockFromSale(items) {
   const stock = JSON.parse(localStorage.getItem('stock') || '{}');
   items.forEach(item => {
     if (stock[item.productId] !== undefined) {
-      const reduceBy = item.type === 'weight' ? 0.5 : item.quantity;
+      let reduceBy = 0;
+      if (item.type === 'weight') {
+        // item.quantity stores direct kilograms for weight items
+        reduceBy = item.quantity || 0;
+      } else {
+        reduceBy = item.quantity;
+      }
       stock[item.productId] = Math.max(0, (stock[item.productId] || 0) - reduceBy);
     }
   });
@@ -399,7 +406,7 @@ export function renderCashierPage() {
       </div>
     </div>
 
-    <!-- Weight Price Modal -->
+    <!-- Weight & Price Two-Way Calculator Modal (KG) -->
     <div class="modal" id="weight-modal">
       <div class="modal-content">
         <div class="modal-header">
@@ -407,9 +414,15 @@ export function renderCashierPage() {
           <button class="modal-close" data-modal="weight-modal">×</button>
         </div>
         <div class="modal-body">
-          <p>შეიყვანეთ საბოლოო ფასი (₾):</p>
-          <input type="number" id="weight-price-input" class="form-input" step="0.01" min="0" placeholder="0.00">
-          <div class="modal-actions">
+          <div class="form-group">
+            <label>ფასი (₾):</label>
+            <input type="number" id="weight-price-input" class="form-input" step="0.01" min="0" placeholder="0.00">
+          </div>
+          <div class="form-group mt-3">
+            <label>წონა (კგ):</label>
+            <input type="number" id="weight-kg-input" class="form-input" step="0.001" min="0" placeholder="0.000">
+          </div>
+          <div class="modal-actions mt-3">
             <button id="weight-confirm-btn" class="btn btn-primary">დამატება</button>
           </div>
         </div>
@@ -543,7 +556,6 @@ function openMultiplierModal(product) {
     });
   });
 
-  // Handle manual input inside multiplier modal
   const manualInput = document.getElementById('manual-liter-input');
   manualInput.value = '';
   
@@ -566,20 +578,53 @@ function openMultiplierModal(product) {
 
 function openWeightModal(product) {
   document.getElementById('weight-product-name').textContent = product.name + ` (${product.price.toFixed(2)} ₾/კგ)`;
-  document.getElementById('weight-price-input').value = '';
-  document.getElementById('weight-modal').classList.add('active');
+  
+  const priceInput = document.getElementById('weight-price-input');
+  const kgInput = document.getElementById('weight-kg-input');
+  priceInput.value = '';
+  kgInput.value = '';
+
+  // Two-way interactive sync handlers (KG based)
+  const handlePriceInput = () => {
+    const price = parseFloat(priceInput.value);
+    if (!isNaN(price) && product.price > 0) {
+      const kg = price / product.price;
+      kgInput.value = kg.toFixed(3);
+    } else {
+      kgInput.value = '';
+    }
+  };
+
+  const handleKgInput = () => {
+    const kg = parseFloat(kgInput.value);
+    if (!isNaN(kg)) {
+      const price = kg * product.price;
+      priceInput.value = price.toFixed(2);
+    } else {
+      priceInput.value = '';
+    }
+  };
+
+  priceInput.oninput = handlePriceInput;
+  kgInput.oninput = handleKgInput;
+
+  const modal = document.getElementById('weight-modal');
+  modal.classList.add('active');
 
   const confirmBtn = document.getElementById('weight-confirm-btn');
   const newBtn = confirmBtn.cloneNode(true);
   confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
 
   newBtn.addEventListener('click', () => {
-    const price = parseFloat(document.getElementById('weight-price-input').value);
-    if (isNaN(price) || price <= 0) {
-      alert('გთხოვთ შეიყვანოთ სწორი ფასი');
+    const price = parseFloat(priceInput.value);
+    const kg = parseFloat(kgInput.value);
+
+    if (isNaN(price) || price <= 0 || isNaN(kg) || kg <= 0) {
+      alert('გთხოვთ შეიყვანოთ სწორი ფასი ან წონა');
       return;
     }
-    addToCart(product.id, 1, price);
-    document.getElementById('weight-modal').classList.remove('active');
+
+    addToCart(product.id, 1, price, 1, kg);
+    modal.classList.remove('active');
   });
 }

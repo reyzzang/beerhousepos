@@ -14,7 +14,8 @@ export const categories = [
       { id: 'katkha', name: 'კათხა', price: 3.90, unit: 'ლიტრი', type: 'liter', multipliers: [1, 2, 3, 6] },
       { id: 'kasris', name: 'კასრის', price: 3.80, unit: 'ლიტრი', type: 'liter', multipliers: [1, 2, 3, 6] },
       { id: '12_martsvali', name: '12 მარცვალი', price: 6.00, unit: 'ლიტრი', type: 'liter', multipliers: [1, 2, 3, 6] },
-      { id: 'tsiv_tsivi', name: 'ცივ ცივი', price: 5.00, unit: 'ლიტრი', type: 'liter', multipliers: [1, 2, 3, 6] }
+      { id: 'tsiv_tsivi', name: 'ცივ ცივი', price: 5.00, unit: 'ლიტრი', type: 'liter', multipliers: [1, 2, 3, 6] },
+      { id: 'taati', name: 'ტაატი', price: 6.50, unit: 'ლიტრი', type: 'liter', multipliers: [1, 2, 3, 6] }
     ]
   },
   {
@@ -196,7 +197,7 @@ export const distributors = [
   {
     id: 'ludis',
     name: 'ყაზბეგი',
-    products: ['ყაზბეგი', 'შავი ლომი']
+    products: ['ყაზბეგი', 'შავი ლომი', 'ტაატი']
   },
   {
     id: 'natakhtari',

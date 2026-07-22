@@ -18,13 +18,13 @@ export function renderShiftsPage() {
     const breakdown = calculateLiveShiftFinancials(currentShift);
     activeShiftFinancialBreakdown = `
       <div class="mt-2" style="background: rgba(0,0,0,0.03); padding: 10px; border-radius: 6px;">
-        <p><strong>მთლიანი შემოსავალი (Gross):</strong> ${(breakdown.totalSales || 0).toFixed(2)} ₾</p>
+        <p><strong>მთლიანი შემოსავალი :</strong> ${(breakdown.totalSales || 0).toFixed(2)} ₾</p>
         <p><strong>ბარათით გადახდილი:</strong> ${(breakdown.cardTotal || 0).toFixed(2)} ₾</p>
         <p><strong>ნაღდი ფული (სულ):</strong> ${(breakdown.cashTotal || 0).toFixed(2)} ₾</p>
         <p><strong>კასრიდან გადახდილი ხარჯები/დისტრიბუცია:</strong> -${(breakdown.cashDeskExpenses || 0).toFixed(2)} ₾</p>
         <p><strong>ხელფასი (მითითებული):</strong> -${(currentShift.salary || 0).toFixed(2)} ₾</p>
         <hr style="margin: 5px 0;">
-        <p style="font-size: 1.1em;"><strong>დარჩენილი სუფთა ნაღდი ფული (Net Cash):</strong> <span style="color: green; font-weight: bold;">${(breakdown.netCash || 0).toFixed(2)} ₾</span></p>
+        <p style="font-size: 1.1em;"><strong>დარჩენილი სუფთა ნაღდი ფული:</strong> <span style="color: green; font-weight: bold;">${(breakdown.netCash || 0).toFixed(2)} ₾</span></p>
       </div>
     `;
   }

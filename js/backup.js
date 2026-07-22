@@ -1,4 +1,4 @@
-// backup.js - Background sync timers and cloud bridge payload
+// backup.js - Background sync timers, cloud bridge, local disk backup, and smart-merge restore
 
 import { getShifts, checkAndCloseShiftsByTime, generateDailySummary } from './auth.js';
 
@@ -27,13 +27,14 @@ function checkBackupTime() {
     const key = `${now.toISOString().split('T')[0]}_${hours}`;
     if (lastBackupCheck === key) return; // prevent double in same minute
     lastBackupCheck = key;
-    performBackup();
+    
+    performCloudBackup();
+    downloadLocalBackup(); 
   }
 }
 
-export function performBackup() {
-  console.log('[Backup] Starting backup at', new Date().toISOString());
-
+export function performCloudBackup() {
+  console.log('[Backup] Starting cloud backup at', new Date().toISOString());
   const payload = compilePayload();
 
   // Send via fetch (no-cors for Google Apps Script often needed, but we try)
@@ -45,19 +46,35 @@ export function performBackup() {
     },
     body: JSON.stringify(payload)
   }).then(() => {
-    console.log('[Backup] Payload sent successfully');
-    // Log local backup time
+    console.log('[Backup] Payload sent successfully to cloud');
     localStorage.setItem('lastBackup', new Date().toISOString());
   }).catch(err => {
-    console.error('[Backup] Failed to send:', err);
-    // Still save local copy of payload for manual recovery
+    console.error('[Backup] Failed to send to cloud:', err);
     localStorage.setItem('lastBackupPayload', JSON.stringify(payload));
   });
 }
 
+// Generates a JSON file of all data and downloads it to the PC (e.g., D Disk)
+export function downloadLocalBackup() {
+  console.log('[Backup] Generating local backup file...');
+  const payload = compilePayload();
+  
+  // Convert payload to a readable JSON string
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(payload, null, 2));
+  
+  // Create a hidden link and trigger download
+  const dlAnchorElem = document.createElement('a');
+  dlAnchorElem.setAttribute("href", dataStr);
+  dlAnchorElem.setAttribute("download", `pos_მონაცემები_${new Date().toISOString().split('T')[0]}.json`);
+  
+  document.body.appendChild(dlAnchorElem);
+  dlAnchorElem.click();
+  document.body.removeChild(dlAnchorElem);
+}
+
 function compilePayload() {
   const now = new Date();
-  const data = {
+  return {
     timestamp: now.toISOString(),
     businessName: 'ლუდის სახლი ჯაჭვის ხიდთან',
     localStorageSnapshot: {
@@ -96,12 +113,100 @@ function compilePayload() {
       netCash: s.netCash
     }))
   };
-
-  return data;
 }
 
-// Manual backup trigger (for admin if needed)
-export function manualBackup() {
-  performBackup();
-  alert('ბექაპი გაიგზავნა (შეამოწმეთ კონსოლი)');
+// Manual backup trigger for Admin UI
+export function manualLocalBackup() {
+  downloadLocalBackup();
+  alert('ლოკალური ბექაპი გადმოიწერა თქვენს კომპიუტერში.');
+}
+
+// Function to smart-merge data from a backup JSON file without losing new transactions
+export function restoreFromBackup(file) {
+  const reader = new FileReader();
+  
+  reader.onload = function(e) {
+    try {
+      const backupData = JSON.parse(e.target.result);
+      
+      // Check if it's a valid backup file
+      if (!backupData.localStorageSnapshot) {
+        alert('არასწორი ფაილი (Invalid backup file)');
+        return;
+      }
+
+      const backupSnapshot = backupData.localStorageSnapshot;
+
+      // 1. Smart Merge Sales (Combine current sales and file sales, avoiding duplicate IDs)
+      const currentSales = JSON.parse(localStorage.getItem('sales') || '[]');
+      const fileSales = backupSnapshot.sales ? JSON.parse(backupSnapshot.sales) : [];
+      const salesMap = new Map();
+      
+      // Add current sales first
+      currentSales.forEach(s => salesMap.set(s.id, s));
+      // Add file sales if they don't already exist
+      fileSales.forEach(s => {
+        if (!salesMap.has(s.id)) {
+          salesMap.set(s.id, s);
+        }
+      });
+      localStorage.setItem('sales', JSON.stringify(Array.from(salesMap.values())));
+
+      // 2. Smart Merge Shifts
+      const currentShifts = JSON.parse(localStorage.getItem('shifts') || '[]');
+      const fileShifts = backupSnapshot.shifts ? JSON.parse(backupSnapshot.shifts) : [];
+      const shiftsMap = new Map();
+      
+      currentShifts.forEach(sh => shiftsMap.set(sh.id, sh));
+      fileShifts.forEach(sh => {
+        if (!shiftsMap.has(sh.id)) {
+          shiftsMap.set(sh.id, sh);
+        }
+      });
+      localStorage.setItem('shifts', JSON.stringify(Array.from(shiftsMap.values())));
+
+      // 3. Smart Merge Expenses
+      const currentExpenses = JSON.parse(localStorage.getItem('expenses') || '[]');
+      const fileExpenses = backupSnapshot.expenses ? JSON.parse(backupSnapshot.expenses) : [];
+      const expMap = new Map();
+      
+      currentExpenses.forEach(ex => expMap.set(ex.id, ex));
+      fileExpenses.forEach(ex => {
+        if (!expMap.has(ex.id)) {
+          expMap.set(ex.id, ex);
+        }
+      });
+      localStorage.setItem('expenses', JSON.stringify(Array.from(expMap.values())));
+
+      // 4. Smart Merge Distributions
+      const currentDist = JSON.parse(localStorage.getItem('distributions') || '[]');
+      const fileDist = backupSnapshot.distributions ? JSON.parse(backupSnapshot.distributions) : [];
+      const distMap = new Map();
+      
+      currentDist.forEach(d => distMap.set(d.id, d));
+      fileDist.forEach(d => {
+        if (!distMap.has(d.id)) {
+          distMap.set(d.id, d);
+        }
+      });
+      localStorage.setItem('distributions', JSON.stringify(Array.from(distMap.values())));
+
+      // 5. Restore other settings safely if they don't exist locally yet
+      const simpleKeys = ['customProducts', 'customDistributors', 'dailySummaries'];
+      simpleKeys.forEach(key => {
+        if (!localStorage.getItem(key) && backupSnapshot[key]) {
+          localStorage.setItem(key, backupSnapshot[key]);
+        }
+      });
+
+      alert('მონაცემები წარმატებით გაერთიანდა (Smart Merge)! სისტემა ახლა გადაიტვირთება.');
+      window.location.reload(); // Refresh the page to load updated data
+      
+    } catch (err) {
+      console.error('[Backup] Error reading file:', err);
+      alert('შეცდომა ფაილის წაკითხვისას. დარწმუნდით, რომ სწორი ფაილი აირჩიეთ.');
+    }
+  };
+  
+  reader.readAsText(file);
 }

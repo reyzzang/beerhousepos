@@ -1,7 +1,7 @@
-// stock.js - Inventory management and admin overrides
+// stock.js - Inventory management, admin overrides, and responsive stock layout
 
 import { categories, getAllProducts, initialStock } from './products.js';
-import { isAdmin } from './auth.js';
+import { isAdmin, getCurrentUser } from './auth.js';
 
 export function getStock() {
   let stock = localStorage.getItem('stock');
@@ -32,23 +32,28 @@ export function renderStockPage() {
     return;
   }
 
+  const currentUser = getCurrentUser();
+
   content.innerHTML = `
-    <div class="page-header">
-      <h1>მარაგი / ინვენტარი</h1>
+    <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;">
+      <div>
+        <h1>მარაგი / ინვენტარი</h1>
+        ${currentUser ? `<p style="font-size: 13px; color: #666; margin-top: 4px;">მომხმარებელი: <strong>${currentUser.name || currentUser.username}</strong></p>` : ''}
+      </div>
       <button id="add-product-btn" class="btn btn-primary">ახალი პროდუქტის დამატება</button>
     </div>
 
-    <div class="card">
-      <div class="table-responsive">
-        <table class="data-table" id="stock-table">
+    <div class="card" style="padding: 15px; width: 100%; max-width: 100%; box-sizing: border-box;">
+      <div style="width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;">
+        <table class="data-table" id="stock-table" style="width: 100%; min-width: 650px; border-collapse: collapse; white-space: nowrap;">
           <thead>
             <tr>
-              <th>კატეგორია</th>
-              <th>პროდუქტი</th>
-              <th>ფასი</th>
-              <th>ერთეული</th>
-              <th>მარაგი</th>
-              <th>მოქმედება</th>
+              <th style="text-align: left; padding: 12px 10px;">კატეგორია</th>
+              <th style="text-align: left; padding: 12px 10px;">პროდუქტი</th>
+              <th style="text-align: left; padding: 12px 10px;">ფასი</th>
+              <th style="text-align: left; padding: 12px 10px;">ერთეული</th>
+              <th style="text-align: left; padding: 12px 10px;">მარაგი</th>
+              <th style="text-align: left; padding: 12px 10px;">მოქმედება</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -99,7 +104,7 @@ export function renderStockPage() {
             </div>
             <div class="form-group">
               <label>საწყისი მარაგი</label>
-              <input type="number" id="prod-stock" class="form-input" min="0" value="0" required>
+              <input type="number" id="prod-stock" class="form-input" min="0" step="0.001" value="0" required>
             </div>
             <div class="form-group full-width">
               <button type="submit" class="btn btn-primary">შენახვა</button>
@@ -120,7 +125,7 @@ export function renderStockPage() {
           <p id="adjust-product-name"></p>
           <div class="form-group">
             <label>ახალი რაოდენობა</label>
-            <input type="number" id="adjust-qty" class="form-input" min="0" step="0.1">
+            <input type="number" id="adjust-qty" class="form-input" min="0" step="0.001">
           </div>
           <div class="modal-actions">
             <button id="adjust-confirm-btn" class="btn btn-primary">შენახვა</button>
@@ -136,6 +141,7 @@ export function renderStockPage() {
     document.getElementById('product-modal-title').textContent = 'ახალი პროდუქტი';
     document.getElementById('edit-product-id').value = '';
     document.getElementById('product-form').reset();
+    document.getElementById('prod-stock').disabled = false;
     document.getElementById('product-modal').classList.add('active');
   });
 
@@ -155,17 +161,30 @@ export function renderStockPage() {
     const stockQty = parseFloat(document.getElementById('prod-stock').value);
     const catId = document.getElementById('prod-category').value;
 
-    // Custom products stored separately
+    let overrides = JSON.parse(localStorage.getItem('productOverrides') || '{}');
     let customProducts = JSON.parse(localStorage.getItem('customProducts') || '[]');
 
     if (editId) {
-      // Edit existing custom
-      const idx = customProducts.findIndex(p => p.id === editId);
-      if (idx !== -1) {
-        customProducts[idx] = {
-          ...customProducts[idx],
-          name, price, unit, type, categoryId: catId
-        };
+      // Check if it's a hardcoded category item or a custom product
+      let isCustom = customProducts.some(p => p.id === editId);
+      if (isCustom) {
+        customProducts = customProducts.map(p => p.id === editId ? {
+          ...p,
+          name, price, unit, type, categoryId: catId,
+          categoryName: categories.find(c => c.id === catId)?.name || 'სხვა'
+        } : p);
+        localStorage.setItem('customProducts', JSON.stringify(customProducts));
+      } else {
+        // Hardcoded product override
+        overrides[editId] = { name, price, unit, type, categoryId: catId };
+        localStorage.setItem('productOverrides', JSON.stringify(overrides));
+      }
+
+      // Update stock if changed
+      const stock = getStock();
+      if (!isNaN(stockQty)) {
+        stock[editId] = stockQty;
+        saveStock(stock);
       }
     } else {
       const newId = 'custom_' + Date.now();
@@ -179,16 +198,15 @@ export function renderStockPage() {
         categoryName: categories.find(c => c.id === catId)?.name || 'სხვა',
         multipliers: type === 'liter' ? [1, 2, 3, 6] : undefined
       });
-      // Add to stock
+      localStorage.setItem('customProducts', JSON.stringify(customProducts));
       const stock = getStock();
       stock[newId] = stockQty;
       saveStock(stock);
     }
 
-    localStorage.setItem('customProducts', JSON.stringify(customProducts));
     document.getElementById('product-modal').classList.remove('active');
     renderStockTable();
-    alert('პროდუქტი შენახულია. გვერდის განახლება საჭიროა სრულად გამოსაჩენად.');
+    alert('პროდუქტი შენახულია.');
   });
 }
 
@@ -198,34 +216,50 @@ function renderStockTable() {
 
   const stock = getStock();
   const allProducts = getAllProducts();
-  const customProducts = JSON.parse(localStorage.getItem('customProducts') || '[]');
+  const overrides = JSON.parse(localStorage.getItem('productOverrides') || '{}');
+  const deletedIds = JSON.parse(localStorage.getItem('deletedProducts') || '[]');
 
-  // Merge
-  const combined = [...allProducts];
-  customProducts.forEach(cp => {
-    if (!combined.find(p => p.id === cp.id)) {
-      combined.push(cp);
-    }
-  });
+  // Apply overrides and filter out deleted items
+  const combined = allProducts
+    .filter(p => !deletedIds.includes(p.id))
+    .map(p => {
+      if (overrides[p.id]) {
+        const ov = overrides[p.id];
+        return {
+          ...p,
+          name: ov.name,
+          price: ov.price,
+          unit: ov.unit,
+          type: ov.type,
+          categoryId: ov.categoryId,
+          categoryName: categories.find(c => c.id === ov.categoryId)?.name || p.categoryName
+        };
+      }
+      return p;
+    });
 
   tbody.innerHTML = combined.map(p => {
     const qty = stock[p.id] !== undefined ? stock[p.id] : 0;
-    const lowStock = qty < 10;
+    const lowStock = qty < 5;
     return `
       <tr class="${lowStock ? 'low-stock' : ''}">
-        <td>${p.categoryName || '-'}</td>
-        <td>${p.name}</td>
-        <td>${p.price.toFixed(2)} ₾</td>
-        <td>${p.unit}</td>
-        <td><strong>${typeof qty === 'number' ? qty.toFixed(1) : qty}</strong></td>
-        <td>
-          <button class="btn btn-secondary btn-sm adjust-btn" data-id="${p.id}" data-name="${p.name}" data-qty="${qty}">კორექტირება</button>
-          ${p.id.startsWith('custom_') ? `<button class="btn btn-danger btn-sm delete-prod-btn" data-id="${p.id}">წაშლა</button>` : ''}
+        <td style="padding: 10px;">${p.categoryName || '-'}</td>
+        <td style="padding: 10px;">${p.name}</td>
+        <td style="padding: 10px;">${p.price.toFixed(2)} ₾</td>
+        <td style="padding: 10px;">${p.unit}</td>
+        <td style="padding: 10px;"><strong>${typeof qty === 'number' ? qty.toFixed(3) : qty}</strong></td>
+        <td style="padding: 10px;">
+          <div style="display: inline-flex; gap: 6px; align-items: center;">
+            <button class="btn btn-secondary btn-sm adjust-btn" data-id="${p.id}" data-name="${p.name}" data-qty="${qty}">რაოდენობა</button>
+            <button class="btn btn-outline btn-sm edit-prod-btn" data-id="${p.id}">რედაქტირება</button>
+            <button class="btn btn-danger btn-sm delete-prod-btn" data-id="${p.id}">წაშლა</button>
+          </div>
         </td>
       </tr>
     `;
   }).join('');
 
+  // Handle stock qty adjustment modal
   tbody.querySelectorAll('.adjust-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.getElementById('adjust-product-name').textContent = btn.dataset.name;
@@ -251,14 +285,46 @@ function renderStockTable() {
     });
   });
 
+  // Handle full product editing (name, price, weight/unit, category, etc.)
+  tbody.querySelectorAll('.edit-prod-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const prodId = btn.dataset.id;
+      const allP = combined.find(p => p.id === prodId);
+      if (!allP) return;
+
+      document.getElementById('product-modal-title').textContent = 'პროდუქტის რედაქტირება';
+      document.getElementById('edit-product-id').value = allP.id;
+      document.getElementById('prod-category').value = allP.categoryId || 'other';
+      document.getElementById('prod-name').value = allP.name;
+      document.getElementById('prod-price').value = allP.price;
+      document.getElementById('prod-unit').value = allP.unit;
+      document.getElementById('prod-type').value = allP.type || 'piece';
+      document.getElementById('prod-stock').value = stock[prodId] !== undefined ? stock[prodId] : 0;
+      
+      document.getElementById('product-modal').classList.add('active');
+    });
+  });
+
+  // Handle deleting any product line completely
   tbody.querySelectorAll('.delete-prod-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (confirm('ნამდვილად გსურთ ამ პროდუქტის წაშლა?')) {
-        let custom = JSON.parse(localStorage.getItem('customProducts') || '[]');
-        custom = custom.filter(p => p.id !== btn.dataset.id);
-        localStorage.setItem('customProducts', JSON.stringify(custom));
+      if (confirm('ნამდვილად გსურთ ამ პროდუქტის ხაზის წაშლა?')) {
+        const prodId = btn.dataset.id;
+        
+        if (prodId.startsWith('custom_')) {
+          let custom = JSON.parse(localStorage.getItem('customProducts') || '[]');
+          custom = custom.filter(p => p.id !== prodId);
+          localStorage.setItem('customProducts', JSON.stringify(custom));
+        } else {
+          let deletedIds = JSON.parse(localStorage.getItem('deletedProducts') || '[]');
+          if (!deletedIds.includes(prodId)) {
+            deletedIds.push(prodId);
+            localStorage.setItem('deletedProducts', JSON.stringify(deletedIds));
+          }
+        }
+
         const stock = getStock();
-        delete stock[btn.dataset.id];
+        delete stock[prodId];
         saveStock(stock);
         renderStockTable();
       }

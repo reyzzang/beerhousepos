@@ -5,6 +5,7 @@ import { renderDistributionPage } from './distribution.js';
 import { renderStockPage } from './stock.js';
 import { renderHistoryPage } from './history.js';
 import { renderShiftsPage } from './shifts.js';
+import { renderProfitPage } from './profit.js'; // Added import for profit page
 import { initBackup } from './backup.js';
 import { getStock, saveStock } from './stock.js';
 import { initialStock } from './products.js';
@@ -71,6 +72,13 @@ function navigateTo(page) {
     return;
   }
 
+  // Security check for profit page
+  if (page === 'profit' && !isAdmin()) {
+    alert('მოგების გვერდი ხელმისაწვდომია მხოლოდ ადმინისთვის');
+    navigateTo('cashier');
+    return;
+  }
+
   switch (page) {
     case 'cashier':
       renderCashierPage();
@@ -86,6 +94,9 @@ function navigateTo(page) {
       break;
     case 'shifts':
       renderShiftsPage();
+      break;
+    case 'profit':
+      renderProfitPage();
       break;
     default:
       renderCashierPage();

@@ -119,37 +119,56 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-width: 0; /* Prevents flex items from blowing out width */
 }
 
 /* Header */
 .app-header {
-  height: var(--header-height);
+  min-height: var(--header-height);
+  height: auto;
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 1.5rem;
+  padding: 0.5rem 1.5rem;
   position: sticky;
   top: 0;
   z-index: 50;
   box-shadow: var(--shadow);
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.header-left {
+  flex: 1 1 200px;
+  min-width: 0;
 }
 
 .header-left h1 {
   font-size: 1.15rem;
   color: var(--primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .header-right {
   display: flex;
   align-items: center;
   gap: 1.25rem;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .header-user-info {
   text-align: right;
   font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .header-user-info .name {
@@ -167,6 +186,7 @@
   flex: 1;
   padding: 1.5rem;
   overflow-y: auto;
+  min-width: 0;
 }
 
 /* Page header */
@@ -421,5 +441,63 @@
 
   .main-wrapper {
     margin-left: 60px;
+  }
+}
+
+@media (max-width: 600px) {
+  .app-header {
+    padding: 0.5rem 1rem;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .header-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+/* Add this inside your layout.css or components.css to make the product modal UX-friendly and prevent horizontal scrolling */
+
+.modal-content {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  width: 90%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: modalIn 0.2s ease;
+  box-sizing: border-box;
+}
+
+#product-form.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#product-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0; /* Prevents flex/grid blowouts */
+}
+
+#product-form .form-group.full-width {
+  grid-column: 1 / -1;
+}
+
+#product-form .form-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Responsive mobile view for modal inputs */
+@media (max-width: 576px) {
+  #product-form.form-grid {
+    grid-template-columns: 1fr;
   }
 }
