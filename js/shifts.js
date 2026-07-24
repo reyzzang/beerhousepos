@@ -6,6 +6,18 @@ import { endShiftToDisk } from './dbSync.js'; // Added disk sync import
 
 let editingShiftId = null;
 
+/**
+ * Checks if the logged-in user is authorized to end the active shift.
+ * Allowed: The employee who opened the shift OR an Admin.
+ */
+function canCloseShift(user, currentShift) {
+  if (!user || !currentShift) return false;
+  if (isAdmin()) return true;
+
+  return (user.username && currentShift.username && user.username === currentShift.username) ||
+         (user.name && currentShift.userName && user.name === currentShift.userName);
+}
+
 export function renderShiftsPage() {
   const content = document.getElementById('main-content');
   if (!content) return;
@@ -13,6 +25,7 @@ export function renderShiftsPage() {
   const currentShift = getCurrentShift();
   const user = getCurrentUser();
   const isAdminUser = isAdmin();
+  const canUserClose = currentShift ? canCloseShift(user, currentShift) : false;
 
   let activeShiftFinancialBreakdown = '';
   if (currentShift) {
@@ -42,7 +55,13 @@ export function renderShiftsPage() {
         <p><strong>ცვლა:</strong> ${currentShift.shiftBlock?.name || '-'}</p>
         <p><strong>დაწყების დრო:</strong> ${new Date(currentShift.loginTime).toLocaleString('ka-GE')}</p>
         ${activeShiftFinancialBreakdown}
-        <button id="end-shift-btn" class="btn btn-danger mt-3">ცვლის დასრულება</button>
+        ${canUserClose ? `
+          <button id="end-shift-btn" class="btn btn-danger mt-3">ცვლის დასრულება</button>
+        ` : `
+          <div class="mt-3 p-2" style="background: #fff3cd; color: #856404; border: 1px solid #ffeeba; border-radius: 6px; font-weight: bold;">
+            ⚠️ მიმდინარე ცვლა გახსნილია <u>${currentShift.userName}</u>-ის მიერ. ცვლის დახურვა შეუძლია მხოლოდ მას ან ადმინისტრატორს.
+          </div>
+        `}
       ` : `
         <p>მიმდინარე ცვლა არ არის აქტიური</p>
         <button id="start-shift-btn" class="btn btn-success">ცვლის დაწყება</button>
@@ -212,6 +231,12 @@ function startNewShift() {
 function endCurrentShift() {
   const current = getCurrentShift();
   if (!current || current.closed) return;
+
+  const user = getCurrentUser();
+  if (!canCloseShift(user, current)) {
+    alert(`წვდომა შეზღუდულია! ცვლის დახურვა შეუძლია მხოლოდ იმ თანამშრომელს, ვინც გახსნა ცვლა (${current.userName}), ან ადმინისტრატორს.`);
+    return;
+  }
 
   if (!confirm('ნამდვილად გსურთ ცვლის დასრულება?')) return;
 
