@@ -1,8 +1,7 @@
-// cashier.js - POS calculator, cart, weight vs. liter math, and dynamic weight (kg)/price calculation
+// cashier.js - POS calculator, cart, weight vs. liter math, dynamic weight (kg)/price calculation, and cash change calculator
 
 import { getCategoriesWithCustom, getProductById } from './products.js';
 import { getCurrentUser, getCurrentShift } from './auth.js';
-import { determineShiftBlock, getShifts, saveShifts } from './auth.js';
 
 let cart = [];
 
@@ -16,31 +15,43 @@ export function clearCart() {
 }
 
 export function addToCart(productId, quantity = 1, customPrice = null, multiplier = 1, customWeightKg = null) {
+  const shift = getCurrentShift();
+  if (!shift || shift.closed) {
+    alert('⚠️ გაყიდვის განსახორციელებლად აუცილებელია ცვლის დაწყება!\nგთხოვთ, გადახვიდეთ "ცვლები"-ს გვერდზე.');
+    return;
+  }
+
   const product = getProductById(productId);
   if (!product) return;
 
-  let finalPrice = customPrice !== null ? customPrice : product.price;
+  let finalPrice = product.price;
   let finalQty = quantity;
   let displayName = product.name;
-  let unitLabel = product.unit;
+  let unitLabel = product.unit || 'ცალი';
+  let totalAmount = 0;
 
   if (product.type === 'liter') {
     finalQty = multiplier;
-    finalPrice = product.price * multiplier;
+    finalPrice = product.price;
+    totalAmount = product.price * multiplier;
     displayName = `${product.name} x${multiplier}`;
     unitLabel = `${multiplier} ლიტრი`;
   } else if (product.type === 'weight') {
-    finalPrice = customPrice;
-    // Store weight in kilograms inside quantity for proper stock deduction
-    finalQty = customWeightKg !== null ? customWeightKg : (customPrice / product.price);
-    displayName = `${product.name} (${finalQty.toFixed(3)} კგ - ${customPrice.toFixed(2)} ₾)`;
+    finalQty = customWeightKg !== null ? customWeightKg : (product.price > 0 ? customPrice / product.price : 0);
+    finalPrice = customPrice !== null ? customPrice : (product.price * finalQty);
+    totalAmount = finalPrice;
+    displayName = `${product.name} (${finalQty.toFixed(3)} კგ - ${totalAmount.toFixed(2)} ₾)`;
     unitLabel = `${finalQty.toFixed(3)} კგ`;
+  } else {
+    // Standard piece item
+    finalPrice = customPrice !== null ? customPrice : product.price;
+    totalAmount = finalPrice * finalQty;
   }
 
   const existingIdx = cart.findIndex(item => 
     item.productId === productId && 
     item.type === product.type && 
-    (product.type !== 'weight') &&
+    product.type !== 'weight' &&
     item.multiplier === multiplier
   );
 
@@ -50,23 +61,22 @@ export function addToCart(productId, quantity = 1, customPrice = null, multiplie
       cart[existingIdx].multiplier = cart[existingIdx].quantity;
       cart[existingIdx].name = `${product.name} x${cart[existingIdx].quantity}`;
       cart[existingIdx].unit = `${cart[existingIdx].quantity} ლიტრი`;
-      cart[existingIdx].price = product.price * cart[existingIdx].quantity;
-      cart[existingIdx].total = cart[existingIdx].price;
+      cart[existingIdx].total = product.price * cart[existingIdx].quantity;
     } else {
-      cart[existingIdx].total = cart[existingIdx].quantity * product.price;
+      cart[existingIdx].total = cart[existingIdx].quantity * cart[existingIdx].price;
     }
   } else {
     cart.push({
       id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
       productId: product.id,
       name: displayName,
-      price: product.type === 'weight' ? finalPrice : (product.type === 'liter' ? product.price * multiplier : product.price),
+      price: finalPrice,
       quantity: finalQty,
       unit: unitLabel,
       type: product.type,
       multiplier: multiplier,
-      total: product.type === 'liter' ? (product.price * multiplier) : finalPrice,
-      categoryName: product.categoryName
+      total: totalAmount,
+      categoryName: product.categoryName || ''
     });
   }
 
@@ -81,11 +91,12 @@ export function removeFromCart(cartItemId) {
 export function updateCartQuantity(cartItemId, newQty) {
   const item = cart.find(i => i.id === cartItemId);
   if (!item || item.type === 'weight') return;
+  
   if (newQty <= 0) {
     removeFromCart(cartItemId);
     return;
   }
-  
+
   item.quantity = newQty;
   const product = getProductById(item.productId);
 
@@ -93,11 +104,11 @@ export function updateCartQuantity(cartItemId, newQty) {
     item.multiplier = newQty;
     item.name = `${product.name} x${newQty}`;
     item.unit = `${newQty} ლიტრი`;
-    item.price = product.price * newQty;
-    item.total = item.price;
+    item.total = product.price * newQty;
   } else {
     item.total = item.price * newQty;
   }
+
   renderCart();
 }
 
@@ -116,30 +127,41 @@ export function renderCart() {
     return;
   }
 
-  container.innerHTML = cart.map(item => `
-    <div class="cart-item" data-id="${item.id}">
-      <div class="cart-item-info">
-        <div class="cart-item-name">${item.name}</div>
-        <div class="cart-item-meta">${item.unit} • ${item.type === 'liter' ? (item.price / (item.quantity || 1)).toFixed(2) : item.price.toFixed(2)} ₾</div>
+  container.innerHTML = cart.map(item => {
+    let unitMeta = `${item.unit} • ${item.price.toFixed(2)} ₾`;
+    if (item.type === 'liter') {
+      const product = getProductById(item.productId);
+      const unitPrice = product ? product.price : (item.total / (item.quantity || 1));
+      unitMeta = `${item.unit} • ${unitPrice.toFixed(2)} ₾/ლ`;
+    } else if (item.type === 'weight') {
+      unitMeta = item.unit;
+    }
+
+    return `
+      <div class="cart-item" data-id="${item.id}">
+        <div class="cart-item-info">
+          <div class="cart-item-name">${item.name}</div>
+          <div class="cart-item-meta">${unitMeta}</div>
+        </div>
+        <div class="cart-item-qty">
+          ${item.type !== 'weight' ? `
+            <button class="qty-btn" data-action="minus" data-id="${item.id}">−</button>
+            <span>${item.quantity}</span>
+            <button class="qty-btn" data-action="plus" data-id="${item.id}">+</button>
+          ` : `<span>1</span>`}
+        </div>
+        <div class="cart-item-total">${item.total.toFixed(2)} ₾</div>
+        <button class="cart-item-remove" data-id="${item.id}" title="წაშლა">×</button>
       </div>
-      <div class="cart-item-qty">
-        ${item.type !== 'weight' ? `
-          <button class="qty-btn" data-action="minus" data-id="${item.id}">−</button>
-          <span>${item.quantity}</span>
-          <button class="qty-btn" data-action="plus" data-id="${item.id}">+</button>
-        ` : `<span>1</span>`}
-      </div>
-      <div class="cart-item-total">${item.total.toFixed(2)} ₾</div>
-      <button class="cart-item-remove" data-id="${item.id}" title="წაშლა">×</button>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   totalEl.textContent = getCartTotal().toFixed(2) + ' ₾';
 
   container.querySelectorAll('.qty-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const id = e.target.dataset.id;
-      const action = e.target.dataset.action;
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      const action = btn.dataset.action;
       const item = cart.find(i => i.id === id);
       if (!item) return;
       if (action === 'plus') updateCartQuantity(id, item.quantity + 1);
@@ -148,55 +170,23 @@ export function renderCart() {
   });
 
   container.querySelectorAll('.cart-item-remove').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      removeFromCart(e.target.dataset.id);
+    btn.addEventListener('click', () => {
+      removeFromCart(btn.dataset.id);
     });
   });
 }
 
-export function processPayment(method) {
-  if (cart.length === 0) {
-    alert('კალათა ცარიელია');
+export function processPayment(method, cashTendered = null, changeAmount = 0) {
+  const shift = getCurrentShift();
+  const user = getCurrentUser();
+
+  if (!user || !shift || shift.closed) {
+    alert('⚠️ გაყიდვის განსახორციელებლად აუცილებელია ცვლის დაწყება!\nგთხოვთ, გადახვიდეთ "ცვლები"-ს გვერდზე.');
     return false;
   }
 
-  const user = getCurrentUser();
-  let shift = getCurrentShift();
-
-  if (!shift && user) {
-    const now = new Date();
-    const shiftBlock = determineShiftBlock(now);
-
-    shift = {
-      id: Date.now().toString(),
-      username: user.username,
-      userName: user.name,
-      role: user.role,
-      loginTime: now.toISOString(),
-      logoutTime: null,
-      shiftBlock: shiftBlock,
-      date: now.toISOString().split('T')[0],
-      sales: [],
-      totalSales: 0,
-      cardTotal: 0,
-      cashTotal: 0,
-      deductions: 0,
-      salary: shiftBlock.id === 1 ? 30 : 40,
-      netCash: 0,
-      closed: false,
-      expensesDuringShift: [],
-      distributionsDuringShift: []
-    };
-
-    localStorage.setItem('currentShift', JSON.stringify(shift));
-
-    const shifts = getShifts();
-    shifts.push(shift);
-    saveShifts(shifts);
-  }
-
-  if (!user || !shift) {
-    alert('გთხოვთ შეხვიდეთ სისტემაში და დაიწყეთ ცვლა ცვლების გვერდზე');
+  if (cart.length === 0) {
+    alert('კალათა ცარიელია');
     return false;
   }
 
@@ -209,8 +199,10 @@ export function processPayment(method) {
     items: [...cart],
     total: total,
     paymentMethod: method,
-    paymentMethodLabel: method === 'cash' ? 'ნაღდი' : 'ბარათი',
+    paymentMethodLabel: method === 'cash' ? 'ნაღდი' : (method === 'card' ? 'ბარათი' : 'ნაღდი + ბარათი'),
     cashAmount: method === 'cash' ? total : 0,
+    cashTendered: method === 'cash' ? (cashTendered !== null ? cashTendered : total) : 0,
+    changeAmount: method === 'cash' ? changeAmount : 0,
     cardAmount: method === 'card' ? total : 0,
     timestamp: new Date().toISOString(),
     date: new Date().toISOString().split('T')[0]
@@ -221,53 +213,24 @@ export function processPayment(method) {
 }
 
 export function processSplitPayment(cashAmount, cardAmount) {
+  const shift = getCurrentShift();
+  const user = getCurrentUser();
+
+  if (!user || !shift || shift.closed) {
+    alert('⚠️ გაყიდვის განსახორციელებლად აუცილებელია ცვლის დაწყება!\nგთხოვთ, გადახვიდეთ "ცვლები"-ს გვერდზე.');
+    return false;
+  }
+
   if (cart.length === 0) {
     alert('კალათა ცარიელია');
     return false;
   }
 
-  const user = getCurrentUser();
-  let shift = getCurrentShift();
-
-  if (!shift && user) {
-    const now = new Date();
-    const shiftBlock = determineShiftBlock(now);
-
-    shift = {
-      id: Date.now().toString(),
-      username: user.username,
-      userName: user.name,
-      role: user.role,
-      loginTime: now.toISOString(),
-      logoutTime: null,
-      shiftBlock: shiftBlock,
-      date: now.toISOString().split('T')[0],
-      sales: [],
-      totalSales: 0,
-      cardTotal: 0,
-      cashTotal: 0,
-      deductions: 0,
-      salary: shiftBlock.id === 1 ? 30 : 40,
-      netCash: 0,
-      closed: false,
-      expensesDuringShift: [],
-      distributionsDuringShift: []
-    };
-
-    localStorage.setItem('currentShift', JSON.stringify(shift));
-
-    const shifts = getShifts();
-    shifts.push(shift);
-    saveShifts(shifts);
-  }
-
-  if (!user || !shift) {
-    alert('გთხოვთ შეხვიდეთ სისტემაში და დაიწყეთ ცვლა ცვლების გვერდზე');
-    return false;
-  }
-
   const total = getCartTotal();
-  if (Math.abs((cashAmount + cardAmount) - total) > 0.01) {
+  const sum = Math.round((cashAmount + cardAmount) * 100) / 100;
+  const roundedTotal = Math.round(total * 100) / 100;
+
+  if (Math.abs(sum - roundedTotal) > 0.01) {
     alert('ნაღდი + ბარათი უნდა უდრიდეს ჯამურ თანხას');
     return false;
   }
@@ -283,6 +246,8 @@ export function processSplitPayment(cashAmount, cardAmount) {
     paymentMethodLabel: 'ნაღდი + ბარათი',
     cashAmount: cashAmount,
     cardAmount: cardAmount,
+    cashTendered: cashAmount,
+    changeAmount: 0,
     timestamp: new Date().toISOString(),
     date: new Date().toISOString().split('T')[0]
   };
@@ -305,29 +270,148 @@ function updateStockFromSale(items) {
   const stock = JSON.parse(localStorage.getItem('stock') || '{}');
   items.forEach(item => {
     if (stock[item.productId] !== undefined) {
-      let reduceBy = 0;
-      if (item.type === 'weight') {
-        // item.quantity stores direct kilograms for weight items
-        reduceBy = item.quantity || 0;
-      } else {
-        reduceBy = item.quantity;
-      }
-      stock[item.productId] = Math.max(0, (stock[item.productId] || 0) - reduceBy);
+      let reduceBy = item.quantity || 0;
+      const currentStock = stock[item.productId] || 0;
+      const updatedStock = Math.max(0, currentStock - reduceBy);
+      stock[item.productId] = Math.round(updatedStock * 1000) / 1000;
     }
   });
   localStorage.setItem('stock', JSON.stringify(stock));
 }
 
-function openSplitPaymentModal() {
+function openCashPaymentModal() {
+  const shift = getCurrentShift();
+  if (!shift || shift.closed) {
+    alert('⚠️ გაყიდვის განსახორციელებლად აუცილებელია ცვლის დაწყება!\nგთხოვთ, გადახვიდეთ "ცვლები"-ს გვერდზე.');
+    return;
+  }
+
   if (cart.length === 0) {
     alert('კალათა ცარიელია');
     return;
   }
 
   const total = getCartTotal();
-  document.getElementById('split-total').textContent = total.toFixed(2) + ' ₾';
-  document.getElementById('split-cash').value = '';
-  document.getElementById('split-card').value = '';
+  const modal = document.getElementById('cash-payment-modal');
+  const totalEl = document.getElementById('cash-modal-total');
+  const inputEl = document.getElementById('cash-tendered-input');
+  const changeEl = document.getElementById('cash-change-amount');
+  const quickBtnsContainer = document.getElementById('quick-cash-buttons');
+
+  totalEl.textContent = total.toFixed(2) + ' ₾';
+  inputEl.value = '';
+  changeEl.textContent = '0.00 ₾';
+  changeEl.style.color = '#2e7d32';
+
+  // Build quick cash buttons (Exact amount + standard bill denominations)
+  const quickAmounts = [total];
+  [10, 20, 50, 100].forEach(amt => {
+    if (amt > total && !quickAmounts.includes(amt)) quickAmounts.push(amt);
+  });
+
+  quickBtnsContainer.innerHTML = quickAmounts.map((amt, idx) => `
+    <button class="btn btn-outline quick-cash-btn" data-amt="${amt}">
+      ${idx === 0 ? 'ზუსტი (' + amt.toFixed(2) + ' ₾)' : amt + ' ₾'}
+    </button>
+  `).join('');
+
+  const updateChangeDisplay = (tendered) => {
+    if (isNaN(tendered)) {
+      changeEl.textContent = '0.00 ₾';
+      changeEl.style.color = '#2e7d32';
+      return;
+    }
+    const change = tendered - total;
+    if (change < -0.01) {
+      changeEl.textContent = 'ნაკლებია (' + Math.abs(change).toFixed(2) + ' ₾)';
+      changeEl.style.color = '#d32f2f';
+    } else {
+      changeEl.textContent = Math.max(0, change).toFixed(2) + ' ₾';
+      changeEl.style.color = '#2e7d32';
+    }
+  };
+
+  quickBtnsContainer.querySelectorAll('.quick-cash-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const amt = parseFloat(btn.dataset.amt);
+      inputEl.value = amt.toFixed(2);
+      updateChangeDisplay(amt);
+    });
+  });
+
+  inputEl.oninput = () => {
+    const val = parseFloat(inputEl.value);
+    updateChangeDisplay(val);
+  };
+
+  modal.classList.add('active');
+  setTimeout(() => inputEl.focus(), 100);
+
+  const confirmBtn = document.getElementById('cash-confirm-btn');
+  const newBtn = confirmBtn.cloneNode(true);
+  confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
+
+  const handleCashSubmit = () => {
+    let tendered = parseFloat(inputEl.value);
+    if (isNaN(tendered) || inputEl.value.trim() === '') {
+      tendered = total; // If left blank, treat as exact payment
+    }
+
+    if (tendered < total - 0.01) {
+      alert('მიღებული თანხა ნაკლებია ჯამურ თანხაზე!');
+      return;
+    }
+
+    const change = Math.max(0, tendered - total);
+    if (processPayment('cash', tendered, change)) {
+      modal.classList.remove('active');
+    }
+  };
+
+  newBtn.addEventListener('click', handleCashSubmit);
+  inputEl.onkeydown = (e) => {
+    if (e.key === 'Enter') handleCashSubmit();
+  };
+}
+
+function openSplitPaymentModal() {
+  const shift = getCurrentShift();
+  if (!shift || shift.closed) {
+    alert('⚠️ გაყიდვის განსახორციელებლად აუცილებელია ცვლის დაწყება!\nგთხოვთ, გადახვიდეთ "ცვლები"-ს გვერდზე.');
+    return;
+  }
+
+  if (cart.length === 0) {
+    alert('კალათა ცარიელია');
+    return;
+  }
+
+  const total = getCartTotal();
+  const splitTotalEl = document.getElementById('split-total');
+  const cashInput = document.getElementById('split-cash');
+  const cardInput = document.getElementById('split-card');
+
+  splitTotalEl.textContent = total.toFixed(2) + ' ₾';
+  cashInput.value = '';
+  cardInput.value = '';
+
+  cashInput.oninput = () => {
+    const cashVal = parseFloat(cashInput.value);
+    if (!isNaN(cashVal) && cashVal <= total) {
+      cardInput.value = (total - cashVal).toFixed(2);
+    } else if (cashInput.value === '') {
+      cardInput.value = '';
+    }
+  };
+
+  cardInput.oninput = () => {
+    const cardVal = parseFloat(cardInput.value);
+    if (!isNaN(cardVal) && cardVal <= total) {
+      cashInput.value = (total - cardVal).toFixed(2);
+    } else if (cardInput.value === '') {
+      cashInput.value = '';
+    }
+  };
 
   const modal = document.getElementById('split-payment-modal');
   modal.classList.add('active');
@@ -336,12 +420,23 @@ function openSplitPaymentModal() {
   const newBtn = confirmBtn.cloneNode(true);
   confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
 
-  newBtn.addEventListener('click', () => {
-    const cash = parseFloat(document.getElementById('split-cash').value) || 0;
-    const card = parseFloat(document.getElementById('split-card').value) || 0;
-    modal.classList.remove('active');
-    processSplitPayment(cash, card);
-  });
+  const handleSplitSubmit = () => {
+    const cash = parseFloat(cashInput.value) || 0;
+    const card = parseFloat(cardInput.value) || 0;
+    if (processSplitPayment(cash, card)) {
+      modal.classList.remove('active');
+    }
+  };
+
+  newBtn.addEventListener('click', handleSplitSubmit);
+
+  const handleKeydown = (e) => {
+    if (e.key === 'Enter') {
+      handleSplitSubmit();
+    }
+  };
+  cashInput.onkeydown = handleKeydown;
+  cardInput.onkeydown = handleKeydown;
 }
 
 function showPaymentSuccess(sale) {
@@ -349,6 +444,17 @@ function showPaymentSuccess(sale) {
   if (!modal) return;
   document.getElementById('success-total').textContent = sale.total.toFixed(2) + ' ₾';
   document.getElementById('success-method').textContent = sale.paymentMethodLabel;
+
+  const changeRow = document.getElementById('success-change-row');
+  if (changeRow) {
+    if (sale.paymentMethod === 'cash' && sale.changeAmount > 0) {
+      changeRow.style.display = 'block';
+      document.getElementById('success-change').textContent = sale.changeAmount.toFixed(2) + ' ₾';
+    } else {
+      changeRow.style.display = 'none';
+    }
+  }
+
   modal.classList.add('active');
 }
 
@@ -429,6 +535,34 @@ export function renderCashierPage() {
       </div>
     </div>
 
+    <!-- Cash Payment Calculator Modal -->
+    <div class="modal" id="cash-payment-modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>ნაღდი ანგარიშსწორება</h3>
+          <button class="modal-close" data-modal="cash-payment-modal">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="cart-total-row mb-3">
+            <span>ჯამური თანხა:</span>
+            <span id="cash-modal-total" class="cart-total-value">0.00 ₾</span>
+          </div>
+          <div class="form-group">
+            <label>მიღებული თანხა (₾):</label>
+            <input type="number" id="cash-tendered-input" class="form-input" step="0.01" min="0" placeholder="0.00">
+          </div>
+          <div class="quick-cash-buttons mt-2 mb-3" id="quick-cash-buttons" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
+          <div class="cart-total-row mb-3" style="font-size: 1.2rem;">
+            <span>ხურდა:</span>
+            <span id="cash-change-amount" style="font-weight: bold; color: #2e7d32;">0.00 ₾</span>
+          </div>
+          <div class="modal-actions">
+            <button id="cash-confirm-btn" class="btn btn-success btn-lg" style="width: 100%;">გადახდის დადასტურება</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Payment Success Modal -->
     <div class="modal" id="payment-success-modal">
       <div class="modal-content modal-sm">
@@ -439,7 +573,10 @@ export function renderCashierPage() {
           <div class="success-icon">✓</div>
           <p>ჯამი: <strong id="success-total">0.00 ₾</strong></p>
           <p>გადახდის მეთოდი: <strong id="success-method"></strong></p>
-          <button id="success-close-btn" class="btn btn-primary">დახურვა</button>
+          <p id="success-change-row" style="display:none; color: #2e7d32; font-size: 1.1rem; margin-top: 5px;">
+            ხურდა: <strong id="success-change">0.00 ₾</strong>
+          </p>
+          <button id="success-close-btn" class="btn btn-primary mt-3">დახურვა</button>
         </div>
       </div>
     </div>
@@ -464,7 +601,7 @@ export function renderCashierPage() {
             <label>ბარათის თანხა (₾)</label>
             <input type="number" id="split-card" class="form-input" step="0.01" min="0" placeholder="0.00">
           </div>
-          <div class="modal-actions">
+          <div class="modal-actions mt-3">
             <button id="split-confirm-btn" class="btn btn-primary">გადახდის დადასტურება</button>
           </div>
         </div>
@@ -492,11 +629,9 @@ export function renderCashierPage() {
 
   document.getElementById('clear-cart-btn').addEventListener('click', clearCart);
 
-  document.getElementById('pay-cash-btn').addEventListener('click', () => processPayment('cash'));
+  document.getElementById('pay-cash-btn').addEventListener('click', openCashPaymentModal);
   document.getElementById('pay-card-btn').addEventListener('click', () => processPayment('card'));
-  document.getElementById('pay-split-btn').addEventListener('click', () => {
-    openSplitPaymentModal();
-  });
+  document.getElementById('pay-split-btn').addEventListener('click', openSplitPaymentModal);
 
   document.getElementById('success-close-btn').addEventListener('click', () => {
     document.getElementById('payment-success-modal').classList.remove('active');
@@ -527,6 +662,12 @@ function renderProducts(categoryId) {
 
   grid.querySelectorAll('.product-card').forEach(card => {
     card.addEventListener('click', () => {
+      const shift = getCurrentShift();
+      if (!shift || shift.closed) {
+        alert('⚠️ გაყიდვის განსახორციელებლად აუცილებელია ცვლის დაწყება!\nგთხოვთ, გადახვიდეთ "ცვლები"-ს გვერდზე.');
+        return;
+      }
+
       const id = card.dataset.id;
       const type = card.dataset.type;
       const product = getProductById(id);
@@ -545,7 +686,7 @@ function renderProducts(categoryId) {
 function openMultiplierModal(product) {
   document.getElementById('multiplier-product-name').textContent = product.name;
   const buttons = document.getElementById('multiplier-buttons');
-  buttons.innerHTML = product.multipliers.map(m => `
+  buttons.innerHTML = (product.multipliers || [0.5, 1, 1.5, 2, 2.5, 3]).map(m => `
     <button class="btn btn-outline multiplier-btn" data-mult="${m}">x${m} (${(product.price * m).toFixed(2)} ₾)</button>
   `).join('');
 
@@ -560,10 +701,10 @@ function openMultiplierModal(product) {
   manualInput.value = '';
   
   const confirmManualBtn = document.getElementById('manual-liter-confirm-btn');
-  const newManualBtn = confirmManualBtn.cloneNode(true);
-  confirmManualBtn.parentNode.replaceChild(newManualBtn, confirmManualBtn);
+  const newBtn = confirmManualBtn.cloneNode(true);
+  confirmManualBtn.parentNode.replaceChild(newBtn, confirmManualBtn);
 
-  newManualBtn.addEventListener('click', () => {
+  const handleManualAdd = () => {
     const val = parseFloat(manualInput.value);
     if (isNaN(val) || val <= 0) {
       alert('გთხოვთ შეიყვანოთ ლიტრების სწორი რაოდენობა');
@@ -571,7 +712,12 @@ function openMultiplierModal(product) {
     }
     addToCart(product.id, 1, null, val);
     document.getElementById('multiplier-modal').classList.remove('active');
-  });
+  };
+
+  newBtn.addEventListener('click', handleManualAdd);
+  manualInput.onkeydown = (e) => {
+    if (e.key === 'Enter') handleManualAdd();
+  };
 
   document.getElementById('multiplier-modal').classList.add('active');
 }
@@ -584,7 +730,6 @@ function openWeightModal(product) {
   priceInput.value = '';
   kgInput.value = '';
 
-  // Two-way interactive sync handlers (KG based)
   const handlePriceInput = () => {
     const price = parseFloat(priceInput.value);
     if (!isNaN(price) && product.price > 0) {
@@ -615,7 +760,7 @@ function openWeightModal(product) {
   const newBtn = confirmBtn.cloneNode(true);
   confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
 
-  newBtn.addEventListener('click', () => {
+  const handleWeightSubmit = () => {
     const price = parseFloat(priceInput.value);
     const kg = parseFloat(kgInput.value);
 
@@ -626,5 +771,13 @@ function openWeightModal(product) {
 
     addToCart(product.id, 1, price, 1, kg);
     modal.classList.remove('active');
-  });
+  };
+
+  newBtn.addEventListener('click', handleWeightSubmit);
+
+  const handleKeydown = (e) => {
+    if (e.key === 'Enter') handleWeightSubmit();
+  };
+  priceInput.onkeydown = handleKeydown;
+  kgInput.onkeydown = handleKeydown;
 }

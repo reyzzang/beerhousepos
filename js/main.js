@@ -2,18 +2,12 @@
 import { login, logout, getCurrentUser, getCurrentShift, isAdmin, requireAuth } from './auth.js';
 import { renderCashierPage } from './cashier.js';
 import { renderDistributionPage } from './distribution.js';
-import { renderStockPage } from './stock.js';
+import { renderStockPage, getStock } from './stock.js';
 import { renderHistoryPage } from './history.js';
 import { renderShiftsPage } from './shifts.js';
-import { renderProfitPage } from './profit.js'; // Added import for profit page
+import { renderProfitPage } from './profit.js';
 import { initBackup } from './backup.js';
-import { getStock, saveStock } from './stock.js';
-import { initialStock } from './products.js';
-
-// Ensure initial stock exists
-if (!localStorage.getItem('stock')) {
-  saveStock(initialStock);
-}
+import { syncFromDiskOnLoad } from './dbSync.js';
 
 let liveTimeInterval = null;
 
@@ -72,7 +66,6 @@ function navigateTo(page) {
     return;
   }
 
-  // Security check for profit page
   if (page === 'profit' && !isAdmin()) {
     alert('მოგების გვერდი ხელმისაწვდომია მხოლოდ ადმინისთვის');
     navigateTo('cashier');
@@ -103,7 +96,13 @@ function navigateTo(page) {
   }
 }
 
-function init() {
+async function init() {
+  // 1. Pull data from D: drive sync if local server is active
+  await syncFromDiskOnLoad();
+
+  // 2. Safely initialize, merge, and persist stock for all current products
+  getStock();
+
   const loginForm = document.getElementById('login-form');
   if (loginForm) {
     loginForm.addEventListener('submit', (e) => {

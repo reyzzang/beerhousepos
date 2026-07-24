@@ -32,7 +32,9 @@ export const categories = [
       { id: 'generali', name: 'გენერალი', price: 33.00, unit: 'კგ', type: 'weight' },
       { id: 'lesha', name: 'ლეშა', price: 30.00, unit: 'კგ', type: 'weight' },
       { id: 'satali', name: 'სათალი', price: 50.00, unit: 'კგ', type: 'weight' },
-      { id: 'stavrida', name: 'სტავრიდა', price: 30.00, unit: 'კგ', type: 'weight' }
+      { id: 'stavrida', name: 'სტავრიდა', price: 30.00, unit: 'კგ', type: 'weight' },
+      { id: 'dorado', name: 'დორადო', price: 35.00, unit: 'კგ', type: 'weight' },
+      { id: 'barabulka', name: 'ბარაბულკა', price: 31.00, unit: 'კგ', type: 'weight' }
     ]
   },
   {
@@ -91,7 +93,9 @@ export const categories = [
       { id: 'fanta_tropiki', name: '1 ფანტა ტროპიკი', price: 1.80, unit: 'ცალი', type: 'piece' },
       { id: 'sprite', name: '1 სპრაიტი', price: 1.80, unit: 'ცალი', type: 'piece' },
       { id: 'kapi_palpi', name: '1 კაპი-პალპი', price: 2.80, unit: 'ცალი', type: 'piece' },
+      { id: 'kapi_palpi_alublis', name: '1 კაპი-პალპი (ალუბლის)', price: 2.80, unit: 'ცალი', type: 'piece' },
       { id: 'tsivi_chai', name: '1 ცივი ჩაი ბოთლის', price: 2.20, unit: 'ცალი', type: 'piece' },
+      { id: 'tsivi_chai_qila', name: '1 ცივი ჩაი (ქილის)', price: 2.50, unit: 'ცალი', type: 'piece' },
       { id: 'tsqali_mtis', name: '1 წყალი მთის', price: 0.70, unit: 'ცალი', type: 'piece' }
     ]
   },

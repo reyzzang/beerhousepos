@@ -4,12 +4,39 @@ import { categories, getAllProducts, initialStock } from './products.js';
 import { isAdmin, getCurrentUser } from './auth.js';
 
 export function getStock() {
-  let stock = localStorage.getItem('stock');
-  if (!stock) {
-    localStorage.setItem('stock', JSON.stringify(initialStock));
-    return { ...initialStock };
+  let savedStock = {};
+  try {
+    const raw = localStorage.getItem('stock');
+    if (raw) {
+      savedStock = JSON.parse(raw);
+    }
+  } catch (e) {
+    console.error('Error parsing stock from localStorage:', e);
   }
-  return JSON.parse(stock);
+
+  // Merge initialStock with saved stock so new default items are automatically included
+  const mergedStock = { ...initialStock, ...savedStock };
+
+  // Ensure all products (including custom products) exist in the stock object
+  let hasNewKeys = false;
+  try {
+    const allProducts = getAllProducts();
+    allProducts.forEach(p => {
+      if (mergedStock[p.id] === undefined) {
+        mergedStock[p.id] = initialStock[p.id] !== undefined ? initialStock[p.id] : 0;
+        hasNewKeys = true;
+      }
+    });
+  } catch (e) {
+    console.error('Error fetching products in getStock:', e);
+  }
+
+  // Auto-save merged stock back to localStorage if new keys were found or stock wasn't set yet
+  if (hasNewKeys || !localStorage.getItem('stock')) {
+    saveStock(mergedStock);
+  }
+
+  return mergedStock;
 }
 
 export function saveStock(stock) {
@@ -165,7 +192,6 @@ export function renderStockPage() {
     let customProducts = JSON.parse(localStorage.getItem('customProducts') || '[]');
 
     if (editId) {
-      // Check if it's a hardcoded category item or a custom product
       let isCustom = customProducts.some(p => p.id === editId);
       if (isCustom) {
         customProducts = customProducts.map(p => p.id === editId ? {
@@ -175,12 +201,10 @@ export function renderStockPage() {
         } : p);
         localStorage.setItem('customProducts', JSON.stringify(customProducts));
       } else {
-        // Hardcoded product override
         overrides[editId] = { name, price, unit, type, categoryId: catId };
         localStorage.setItem('productOverrides', JSON.stringify(overrides));
       }
 
-      // Update stock if changed
       const stock = getStock();
       if (!isNaN(stockQty)) {
         stock[editId] = stockQty;
@@ -219,7 +243,6 @@ function renderStockTable() {
   const overrides = JSON.parse(localStorage.getItem('productOverrides') || '{}');
   const deletedIds = JSON.parse(localStorage.getItem('deletedProducts') || '[]');
 
-  // Apply overrides and filter out deleted items
   const combined = allProducts
     .filter(p => !deletedIds.includes(p.id))
     .map(p => {
@@ -259,7 +282,6 @@ function renderStockTable() {
     `;
   }).join('');
 
-  // Handle stock qty adjustment modal
   tbody.querySelectorAll('.adjust-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.getElementById('adjust-product-name').textContent = btn.dataset.name;
@@ -285,7 +307,6 @@ function renderStockTable() {
     });
   });
 
-  // Handle full product editing (name, price, weight/unit, category, etc.)
   tbody.querySelectorAll('.edit-prod-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const prodId = btn.dataset.id;
@@ -305,7 +326,6 @@ function renderStockTable() {
     });
   });
 
-  // Handle deleting any product line completely
   tbody.querySelectorAll('.delete-prod-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       if (confirm('ნამდვილად გსურთ ამ პროდუქტის ხაზის წაშლა?')) {

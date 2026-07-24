@@ -1,7 +1,8 @@
-// shifts.js - Independent shift management with full admin edit/delete
+// shifts.js - Independent shift management with full admin edit/delete & disk sync
 
 import { getCurrentUser, getCurrentShift, getShifts, saveShifts, calculateShiftFinancials, isAdmin, determineShiftBlock } from './auth.js';
 import { getDistributions, getExpenses } from './distribution.js';
+import { endShiftToDisk } from './dbSync.js'; // Added disk sync import
 
 let editingShiftId = null;
 
@@ -238,6 +239,15 @@ function endCurrentShift() {
   const idx = shifts.findIndex(s => s.id === current.id);
   if (idx !== -1) shifts[idx] = current;
   saveShifts(shifts);
+
+  // Sync finished shift data directly to the local D: drive file system
+  try {
+    const shiftDate = current.date || new Date().toISOString().split('T')[0];
+    const shiftNumber = current.shiftBlock?.id || 1;
+    endShiftToDisk(shiftNumber, shiftDate, current);
+  } catch (err) {
+    console.error('Error writing shift data to disk:', err);
+  }
 
   localStorage.removeItem('currentShift');
 
