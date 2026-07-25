@@ -318,6 +318,9 @@ function renderSalesTable(filter = 'today') {
   tbody.innerHTML = sales.map(s => {
     const itemsStr = (s.items || []).map(i => `${i.name} (${i.quantity || i.qty || 1})`).join(', ');
     const time = new Date(s.timestamp).toLocaleString('ka-GE');
+    const isCard = s.paymentMethod === 'card';
+    const cardBadgeStyle = isCard ? 'style="background-color: #1d4ed8; color: #ffffff; font-weight: 600;"' : '';
+
     return `
       <tr>
         <td style="padding: 10px;">${time}</td>
@@ -325,7 +328,7 @@ function renderSalesTable(filter = 'today') {
         <td class="items-cell" style="padding: 10px; max-width: 250px; overflow: hidden; text-overflow: ellipsis;" title="${itemsStr}">${itemsStr.length > 60 ? itemsStr.slice(0, 60) + '...' : itemsStr}</td>
         <td style="padding: 10px;"><strong>${(s.total || 0).toFixed(2)} ₾</strong></td>
         <td style="padding: 10px;">
-          <span class="badge ${s.paymentMethod === 'cash' ? 'badge-success' : s.paymentMethod === 'card' ? 'badge-info' : 'badge-warning'}">${s.paymentMethodLabel || s.paymentMethod || 'ნაღდი'}</span>
+          <span class="badge ${s.paymentMethod === 'cash' ? 'badge-success' : isCard ? 'badge-info' : 'badge-warning'}" ${cardBadgeStyle}>${s.paymentMethodLabel || s.paymentMethod || 'ნაღდი'}</span>
           ${s.cashAmount > 0 ? `<br><small>ნაღდი: ${s.cashAmount.toFixed(2)} ₾</small>` : ''}
           ${s.cardAmount > 0 ? `<br><small>ბარათი: ${s.cardAmount.toFixed(2)} ₾</small>` : ''}
         </td>

@@ -1,15 +1,9 @@
-// shifts.js - Independent shift management with full admin edit/delete & disk sync
-
 import { getCurrentUser, getCurrentShift, getShifts, saveShifts, calculateShiftFinancials, isAdmin, determineShiftBlock } from './auth.js';
 import { getDistributions, getExpenses } from './distribution.js';
-import { endShiftToDisk } from './dbSync.js'; // Added disk sync import
+import { saveToDisk, endShiftToDisk } from './dbSync.js';
 
 let editingShiftId = null;
 
-/**
- * Checks if the logged-in user is authorized to end the active shift.
- * Allowed: The employee who opened the shift OR an Admin.
- */
 function canCloseShift(user, currentShift) {
   if (!user || !currentShift) return false;
   if (isAdmin()) return true;
@@ -94,7 +88,6 @@ export function renderShiftsPage() {
       </div>
     </div>
 
-    <!-- Edit Shift Modal -->
     <div class="modal" id="edit-shift-modal">
       <div class="modal-content">
         <div class="modal-header">
@@ -126,7 +119,6 @@ export function renderShiftsPage() {
     </div>
   `;
 
-  // Buttons
   if (document.getElementById('start-shift-btn')) {
     document.getElementById('start-shift-btn').addEventListener('click', startNewShift);
   }
@@ -134,7 +126,6 @@ export function renderShiftsPage() {
     document.getElementById('end-shift-btn').addEventListener('click', endCurrentShift);
   }
 
-  // Modal close
   document.querySelectorAll('.modal-close').forEach(btn => {
     btn.addEventListener('click', () => {
       const modalId = btn.dataset.modal;
@@ -147,7 +138,6 @@ export function renderShiftsPage() {
 }
 
 function calculateLiveShiftFinancials(shift) {
-  // Filter sales, distributions, and expenses that belong to this shift ID
   const sales = shift.sales || [];
   let totalSales = 0;
   let cardTotal = 0;
@@ -159,7 +149,6 @@ function calculateLiveShiftFinancials(shift) {
     cashTotal += (s.cashAmount || 0);
   });
 
-  // Fallback if sales array inside shift is empty, check global sales mapped by shiftId
   if (sales.length === 0) {
     const globalSales = JSON.parse(localStorage.getItem('sales') || '[]');
     const shiftSales = globalSales.filter(s => s.shiftId === shift.id);
@@ -170,7 +159,6 @@ function calculateLiveShiftFinancials(shift) {
     });
   }
 
-  // Calculate cash desk expenses from distributions and expenses tied to this shift where paymentSource === 'cash_desk'
   const distributions = getDistributions().filter(d => d.shiftId === shift.id && d.paymentSource === 'cash_desk');
   const expenses = getExpenses().filter(e => e.shiftId === shift.id && e.paymentSource === 'cash_desk');
 
@@ -181,17 +169,10 @@ function calculateLiveShiftFinancials(shift) {
   const salary = shift.salary || 0;
   const netCash = cashTotal - cashDeskExpenses - salary;
 
-  return {
-    totalSales,
-    cardTotal,
-    cashTotal,
-    cashDeskExpenses,
-    salary,
-    netCash
-  };
+  return { totalSales, cardTotal, cashTotal, cashDeskExpenses, salary, netCash };
 }
 
-function startNewShift() {
+async function startNewShift() {
   const user = getCurrentUser();
   if (!user) return alert('გთხოვთ შეხვიდეთ');
 
@@ -224,11 +205,14 @@ function startNewShift() {
   shifts.push(shift);
   saveShifts(shifts);
 
+  // Sync state to disk immediately
+  await saveToDisk();
+
   alert(`ცვლა დაიწყო: ${shiftBlock.name}`);
   renderShiftsPage();
 }
 
-function endCurrentShift() {
+async function endCurrentShift() {
   const current = getCurrentShift();
   if (!current || current.closed) return;
 
@@ -243,7 +227,6 @@ function endCurrentShift() {
   current.logoutTime = new Date().toISOString();
   current.closed = true;
 
-  // Calculate precise financials using custom live runner
   const financials = calculateLiveShiftFinancials(current);
   current.totalSales = financials.totalSales;
   current.cardTotal = financials.cardTotal;
@@ -251,13 +234,8 @@ function endCurrentShift() {
   current.cashDeskExpenses = financials.cashDeskExpenses;
   current.netCash = financials.netCash;
 
-  // Also call auth's calculateShiftFinancials if it exists and handles secondary logic safely
   if (typeof calculateShiftFinancials === 'function') {
-    try {
-      calculateShiftFinancials(current);
-    } catch (err) {
-      console.warn(err);
-    }
+    try { calculateShiftFinancials(current); } catch (err) { console.warn(err); }
   }
 
   const shifts = getShifts();
@@ -265,16 +243,14 @@ function endCurrentShift() {
   if (idx !== -1) shifts[idx] = current;
   saveShifts(shifts);
 
-  // Sync finished shift data directly to the local D: drive file system
-  try {
-    const shiftDate = current.date || new Date().toISOString().split('T')[0];
-    const shiftNumber = current.shiftBlock?.id || 1;
-    endShiftToDisk(shiftNumber, shiftDate, current);
-  } catch (err) {
-    console.error('Error writing shift data to disk:', err);
-  }
+  const shiftDate = current.date || new Date().toISOString().split('T')[0];
+  const shiftNumber = current.shiftBlock?.id || 1;
+
+  // Archive finished shift and update main store
+  await endShiftToDisk(shiftNumber, shiftDate, current);
 
   localStorage.removeItem('currentShift');
+  await saveToDisk();
 
   alert(`ცვლა დასრულდა.\nმთლიანი: ${current.totalSales.toFixed(2)} ₾\nბარათი: ${current.cardTotal.toFixed(2)} ₾\nნაღდი: ${current.cashTotal.toFixed(2)} ₾\nკასრის ხარჯი: ${current.cashDeskExpenses.toFixed(2)} ₾\nხელფასი: ${current.salary} ₾\nსუფთა ნაღდი: ${current.netCash.toFixed(2)} ₾`);
   renderShiftsPage();
@@ -291,7 +267,6 @@ function renderAllShiftsTable(isAdminUser) {
     const login = new Date(s.loginTime).toLocaleString('ka-GE');
     const logout = s.logoutTime ? new Date(s.logoutTime).toLocaleString('ka-GE') : '—';
     
-    // Ensure historical shifts display proper breakdown if fields are missing
     const breakdown = s.closed ? {
       totalSales: s.totalSales || 0,
       cardTotal: s.cardTotal || 0,
@@ -330,10 +305,11 @@ function renderAllShiftsTable(isAdminUser) {
       btn.addEventListener('click', () => editShift(btn.dataset.id));
     });
     tbody.querySelectorAll('.delete-shift-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         if (confirm('ნამდვილად გსურთ ამ ცვლის წაშლა?')) {
           let shifts = getShifts().filter(s => s.id !== btn.dataset.id);
           saveShifts(shifts);
+          await saveToDisk();
           renderAllShiftsTable(true);
         }
       });
@@ -362,7 +338,7 @@ function editShift(shiftId) {
   newBtn.addEventListener('click', saveEditedShift);
 }
 
-function saveEditedShift() {
+async function saveEditedShift() {
   if (!editingShiftId) return;
 
   const shifts = getShifts();
@@ -375,6 +351,8 @@ function saveEditedShift() {
   shift.logoutTime = document.getElementById('edit-logout-time').value ? document.getElementById('edit-logout-time').value + ':00' : shift.logoutTime;
 
   saveShifts(shifts);
+  await saveToDisk();
+
   document.getElementById('edit-shift-modal').classList.remove('active');
   editingShiftId = null;
 

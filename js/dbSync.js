@@ -1,6 +1,6 @@
 const API_URL = 'http://localhost:5000/api';
 
-// Call on app boot to restore state from D: drive if browser history was cleared
+// Call on app boot to restore full state from D: drive
 export async function syncFromDiskOnLoad() {
   try {
     const res = await fetch(`${API_URL}/data`);
@@ -17,7 +17,7 @@ export async function syncFromDiskOnLoad() {
   }
 }
 
-// Call whenever general app updates occur
+// Call whenever any general app state/sales update occurs
 export async function saveToDisk() {
   try {
     const currentData = {};

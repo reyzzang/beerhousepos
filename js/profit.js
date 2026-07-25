@@ -25,7 +25,7 @@ export function renderProfitPage() {
 
   content.innerHTML = `
     <div class="page-header">
-      <h1>მოგების ანალიტიკა (Admin Profit)</h1>
+      <h1>მოგების ანალიტიკა</h1>
     </div>
 
     <!-- Summary Metrics Cards -->
@@ -39,7 +39,7 @@ export function renderProfitPage() {
         <p id="total-cost-val" style="font-size: 24px; font-weight: bold; color: #d9534f;">0.00 ₾</p>
       </div>
       <div class="card" style="padding: 20px;">
-        <h3 style="font-size: 14px; color: #666; margin-bottom: 8px;">სუფთა მოგება (Total Profit)</h3>
+        <h3 style="font-size: 14px; color: #666; margin-bottom: 8px;">სუფთა მოგება</h3>
         <p id="total-profit-val" style="font-size: 24px; font-weight: bold; color: #5cb85c;">0.00 ₾</p>
       </div>
     </div>
@@ -63,10 +63,10 @@ export function renderProfitPage() {
             <tr>
               <th style="text-align: left; padding: 12px 10px;">პროდუქტი</th>
               <th style="text-align: left; padding: 12px 10px;">გაყიდული რაოდენობა</th>
-              <th style="text-align: left; padding: 12px 10px;">საშ. გაყიდვის ფასი (y)</th>
-              <th style="text-align: left; padding: 12px 10px;">თვითღირებულება (x)</th>
-              <th style="text-align: left; padding: 12px 10px;">ერთეულის მოგება (y - x)</th>
-              <th style="text-align: left; padding: 12px 10px;">ჯამური მოგება (Z)</th>
+              <th style="text-align: left; padding: 12px 10px;">საშ. გაყიდვის ფასი</th>
+              <th style="text-align: left; padding: 12px 10px;">თვითღირებულება</th>
+              <th style="text-align: left; padding: 12px 10px;">ერთეულის მოგება</th>
+              <th style="text-align: left; padding: 12px 10px;">ჯამური მოგება</th>
             </tr>
           </thead>
           <tbody></tbody>

@@ -1,7 +1,8 @@
-// stock.js - Inventory management, admin overrides, and responsive stock layout
+// stock.js - Inventory management, admin overrides, cost price tracking, and responsive stock layout
 
 import { categories, getAllProducts, initialStock } from './products.js';
 import { isAdmin, getCurrentUser } from './auth.js';
+import { saveToDisk } from './dbSync.js';
 
 export function getStock() {
   let savedStock = {};
@@ -41,6 +42,7 @@ export function getStock() {
 
 export function saveStock(stock) {
   localStorage.setItem('stock', JSON.stringify(stock));
+  saveToDisk(); // Instantly persist to disk drive
 }
 
 export function renderStockPage() {
@@ -72,12 +74,13 @@ export function renderStockPage() {
 
     <div class="card" style="padding: 15px; width: 100%; max-width: 100%; box-sizing: border-box;">
       <div style="width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;">
-        <table class="data-table" id="stock-table" style="width: 100%; min-width: 650px; border-collapse: collapse; white-space: nowrap;">
+        <table class="data-table" id="stock-table" style="width: 100%; min-width: 750px; border-collapse: collapse; white-space: nowrap;">
           <thead>
             <tr>
               <th style="text-align: left; padding: 12px 10px;">კატეგორია</th>
               <th style="text-align: left; padding: 12px 10px;">პროდუქტი</th>
-              <th style="text-align: left; padding: 12px 10px;">ფასი</th>
+              <th style="text-align: left; padding: 12px 10px;">თვითღირებულება</th>
+              <th style="text-align: left; padding: 12px 10px;">გასაყიდი ფასი</th>
               <th style="text-align: left; padding: 12px 10px;">ერთეული</th>
               <th style="text-align: left; padding: 12px 10px;">მარაგი</th>
               <th style="text-align: left; padding: 12px 10px;">მოქმედება</th>
@@ -110,8 +113,12 @@ export function renderStockPage() {
               <input type="text" id="prod-name" class="form-input" required>
             </div>
             <div class="form-group">
-              <label>ფასი (₾)</label>
-              <input type="number" id="prod-price" class="form-input" step="0.01" min="0" required>
+              <label>თვითღირებულება (₾)</label>
+              <input type="number" id="prod-cost-price" class="form-input" step="any" min="0" placeholder="მაგ: 2.406">
+            </div>
+            <div class="form-group">
+              <label>გასაყიდი ფასი (₾)</label>
+              <input type="number" id="prod-price" class="form-input" step="any" min="0" required placeholder="მაგ: 3.50">
             </div>
             <div class="form-group">
               <label>ერთეული</label>
@@ -131,7 +138,7 @@ export function renderStockPage() {
             </div>
             <div class="form-group">
               <label>საწყისი მარაგი</label>
-              <input type="number" id="prod-stock" class="form-input" min="0" step="0.001" value="0" required>
+              <input type="number" id="prod-stock" class="form-input" min="0" step="any" value="0" required>
             </div>
             <div class="form-group full-width">
               <button type="submit" class="btn btn-primary">შენახვა</button>
@@ -152,7 +159,7 @@ export function renderStockPage() {
           <p id="adjust-product-name"></p>
           <div class="form-group">
             <label>ახალი რაოდენობა</label>
-            <input type="number" id="adjust-qty" class="form-input" min="0" step="0.001">
+            <input type="number" id="adjust-qty" class="form-input" min="0" step="any">
           </div>
           <div class="modal-actions">
             <button id="adjust-confirm-btn" class="btn btn-primary">შენახვა</button>
@@ -182,6 +189,8 @@ export function renderStockPage() {
     e.preventDefault();
     const editId = document.getElementById('edit-product-id').value;
     const name = document.getElementById('prod-name').value.trim();
+    const costPriceInput = document.getElementById('prod-cost-price').value;
+    const costPrice = costPriceInput !== '' ? parseFloat(costPriceInput) : 0;
     const price = parseFloat(document.getElementById('prod-price').value);
     const unit = document.getElementById('prod-unit').value;
     const type = document.getElementById('prod-type').value;
@@ -196,12 +205,12 @@ export function renderStockPage() {
       if (isCustom) {
         customProducts = customProducts.map(p => p.id === editId ? {
           ...p,
-          name, price, unit, type, categoryId: catId,
+          name, costPrice, price, unit, type, categoryId: catId,
           categoryName: categories.find(c => c.id === catId)?.name || 'სხვა'
         } : p);
         localStorage.setItem('customProducts', JSON.stringify(customProducts));
       } else {
-        overrides[editId] = { name, price, unit, type, categoryId: catId };
+        overrides[editId] = { name, costPrice, price, unit, type, categoryId: catId };
         localStorage.setItem('productOverrides', JSON.stringify(overrides));
       }
 
@@ -215,6 +224,7 @@ export function renderStockPage() {
       customProducts.push({
         id: newId,
         name,
+        costPrice,
         price,
         unit,
         type,
@@ -251,6 +261,7 @@ function renderStockTable() {
         return {
           ...p,
           name: ov.name,
+          costPrice: ov.costPrice !== undefined ? ov.costPrice : p.costPrice,
           price: ov.price,
           unit: ov.unit,
           type: ov.type,
@@ -264,13 +275,18 @@ function renderStockTable() {
   tbody.innerHTML = combined.map(p => {
     const qty = stock[p.id] !== undefined ? stock[p.id] : 0;
     const lowStock = qty < 5;
+    const costDisplay = p.costPrice !== undefined && p.costPrice !== null ? `${Number(p.costPrice)} ₾` : '0.00 ₾';
+    const priceDisplay = `${Number(p.price)} ₾`;
+    const qtyDisplay = typeof qty === 'number' ? Number(qty.toFixed(3)) : qty;
+
     return `
       <tr class="${lowStock ? 'low-stock' : ''}">
         <td style="padding: 10px;">${p.categoryName || '-'}</td>
         <td style="padding: 10px;">${p.name}</td>
-        <td style="padding: 10px;">${p.price.toFixed(2)} ₾</td>
+        <td style="padding: 10px; color: #d32f2f; font-weight: 500;">${costDisplay}</td>
+        <td style="padding: 10px; color: #2e7d32; font-weight: 500;">${priceDisplay}</td>
         <td style="padding: 10px;">${p.unit}</td>
-        <td style="padding: 10px;"><strong>${typeof qty === 'number' ? qty.toFixed(3) : qty}</strong></td>
+        <td style="padding: 10px;"><strong>${qtyDisplay}</strong></td>
         <td style="padding: 10px;">
           <div style="display: inline-flex; gap: 6px; align-items: center;">
             <button class="btn btn-secondary btn-sm adjust-btn" data-id="${p.id}" data-name="${p.name}" data-qty="${qty}">რაოდენობა</button>
@@ -317,6 +333,7 @@ function renderStockTable() {
       document.getElementById('edit-product-id').value = allP.id;
       document.getElementById('prod-category').value = allP.categoryId || 'other';
       document.getElementById('prod-name').value = allP.name;
+      document.getElementById('prod-cost-price').value = allP.costPrice !== undefined ? allP.costPrice : '';
       document.getElementById('prod-price').value = allP.price;
       document.getElementById('prod-unit').value = allP.unit;
       document.getElementById('prod-type').value = allP.type || 'piece';

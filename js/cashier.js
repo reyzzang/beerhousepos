@@ -2,6 +2,7 @@
 
 import { getCategoriesWithCustom, getProductById } from './products.js';
 import { getCurrentUser, getCurrentShift } from './auth.js';
+import { saveToDisk } from './dbSync.js';
 
 let cart = [];
 
@@ -176,7 +177,7 @@ export function renderCart() {
   });
 }
 
-export function processPayment(method, cashTendered = null, changeAmount = 0) {
+export async function processPayment(method, cashTendered = null, changeAmount = 0) {
   const shift = getCurrentShift();
   const user = getCurrentUser();
 
@@ -208,11 +209,11 @@ export function processPayment(method, cashTendered = null, changeAmount = 0) {
     date: new Date().toISOString().split('T')[0]
   };
 
-  saveSale(sale);
+  await saveSale(sale);
   return true;
 }
 
-export function processSplitPayment(cashAmount, cardAmount) {
+export async function processSplitPayment(cashAmount, cardAmount) {
   const shift = getCurrentShift();
   const user = getCurrentUser();
 
@@ -252,17 +253,30 @@ export function processSplitPayment(cashAmount, cardAmount) {
     date: new Date().toISOString().split('T')[0]
   };
 
-  saveSale(sale);
+  await saveSale(sale);
   return true;
 }
 
-function saveSale(sale) {
+async function saveSale(sale) {
+  // Save sale to global transaction log
   const sales = JSON.parse(localStorage.getItem('sales') || '[]');
   sales.push(sale);
   localStorage.setItem('sales', JSON.stringify(sales));
 
+  // Sync sale into active shift object
+  const currentShift = getCurrentShift();
+  if (currentShift) {
+    if (!currentShift.sales) currentShift.sales = [];
+    currentShift.sales.push(sale);
+    localStorage.setItem('currentShift', JSON.stringify(currentShift));
+  }
+
   updateStockFromSale(cart);
   clearCart();
+  
+  // Persist state to physical D: drive immediately
+  await saveToDisk();
+
   showPaymentSuccess(sale);
 }
 
@@ -351,7 +365,7 @@ function openCashPaymentModal() {
   const newBtn = confirmBtn.cloneNode(true);
   confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
 
-  const handleCashSubmit = () => {
+  const handleCashSubmit = async () => {
     let tendered = parseFloat(inputEl.value);
     if (isNaN(tendered) || inputEl.value.trim() === '') {
       tendered = total; // If left blank, treat as exact payment
@@ -363,7 +377,8 @@ function openCashPaymentModal() {
     }
 
     const change = Math.max(0, tendered - total);
-    if (processPayment('cash', tendered, change)) {
+    const success = await processPayment('cash', tendered, change);
+    if (success) {
       modal.classList.remove('active');
     }
   };
@@ -409,7 +424,7 @@ function openSplitPaymentModal() {
     if (!isNaN(cardVal) && cardVal <= total) {
       cashInput.value = (total - cardVal).toFixed(2);
     } else if (cardInput.value === '') {
-      cashInput.value = '';
+      cardInput.value = '';
     }
   };
 
@@ -420,10 +435,11 @@ function openSplitPaymentModal() {
   const newBtn = confirmBtn.cloneNode(true);
   confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
 
-  const handleSplitSubmit = () => {
+  const handleSplitSubmit = async () => {
     const cash = parseFloat(cashInput.value) || 0;
     const card = parseFloat(cardInput.value) || 0;
-    if (processSplitPayment(cash, card)) {
+    const success = await processSplitPayment(cash, card);
+    if (success) {
       modal.classList.remove('active');
     }
   };
@@ -630,7 +646,9 @@ export function renderCashierPage() {
   document.getElementById('clear-cart-btn').addEventListener('click', clearCart);
 
   document.getElementById('pay-cash-btn').addEventListener('click', openCashPaymentModal);
-  document.getElementById('pay-card-btn').addEventListener('click', () => processPayment('card'));
+  document.getElementById('pay-card-btn').addEventListener('click', async () => {
+    await processPayment('card');
+  });
   document.getElementById('pay-split-btn').addEventListener('click', openSplitPaymentModal);
 
   document.getElementById('success-close-btn').addEventListener('click', () => {

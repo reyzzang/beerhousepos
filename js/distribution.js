@@ -85,7 +85,7 @@ export function renderDistributionPage() {
           <div class="form-group">
             <label>გადახდის წყარო (საიდან გამოიფვა)</label>
             <select id="dist-paymentsource" class="form-input" required>
-              <option value="cash_desk">კასრიდან (ნაღდი ფულით)</option>
+              <option value="cash_desk">კასიდან (ნაღდი ფულით)</option>
               <option value="admin">ადმინისტრაცია / ბარათი / სხვა</option>
             </select>
           </div>
@@ -137,7 +137,7 @@ export function renderDistributionPage() {
           <div class="form-group">
             <label>გადახდის წყარო</label>
             <select id="exp-paymentsource" class="form-input" required>
-              <option value="cash_desk">კასრიდან (ნაღდი ფულით)</option>
+              <option value="cash_desk">კასიდან (ნაღდი ფულით)</option>
               <option value="admin">ადმინისტრაცია / ბარათი / სხვა</option>
             </select>
           </div>
@@ -231,7 +231,7 @@ export function renderDistributionPage() {
           <div class="form-group">
             <label>გადახდის წყარო</label>
             <select id="edit-dist-paymentsource" class="form-input">
-              <option value="cash_desk">კასრიდან (ნაღდი ფულით)</option>
+              <option value="cash_desk">კასიდან (ნაღდი ფულით)</option>
               <option value="admin">ადმინისტრაცია / ბარათი / სხვა</option>
             </select>
           </div>
@@ -265,7 +265,7 @@ export function renderDistributionPage() {
           <div class="form-group">
             <label>გადახდის წყარო</label>
             <select id="edit-exp-paymentsource" class="form-input">
-              <option value="cash_desk">კასრიდან (ნაღდი ფულით)</option>
+              <option value="cash_desk">კასიდან (ნაღდი ფულით)</option>
               <option value="admin">ადმინისტრაცია / ბარათი / სხვა</option>
             </select>
           </div>

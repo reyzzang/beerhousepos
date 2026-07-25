@@ -1,4 +1,5 @@
-// main.js - Entry point and routing
+// main.js - Main entry point, screen navigation, and disk persistence sync
+
 import { login, logout, getCurrentUser, getCurrentShift, isAdmin, requireAuth } from './auth.js';
 import { renderCashierPage } from './cashier.js';
 import { renderDistributionPage } from './distribution.js';
@@ -12,14 +13,21 @@ import { syncFromDiskOnLoad } from './dbSync.js';
 let liveTimeInterval = null;
 
 function showLogin() {
-  document.getElementById('login-screen').classList.remove('hidden');
-  document.getElementById('app').classList.add('hidden');
+  const loginScreen = document.getElementById('login-screen');
+  const appScreen = document.getElementById('app');
+
+  if (loginScreen) loginScreen.classList.remove('hidden');
+  if (appScreen) appScreen.classList.add('hidden');
   if (liveTimeInterval) clearInterval(liveTimeInterval);
 }
 
 function showApp() {
-  document.getElementById('login-screen').classList.add('hidden');
-  document.getElementById('app').classList.remove('hidden');
+  const loginScreen = document.getElementById('login-screen');
+  const appScreen = document.getElementById('app');
+
+  if (loginScreen) loginScreen.classList.add('hidden');
+  if (appScreen) appScreen.classList.remove('hidden');
+
   updateHeader();
   navigateTo('cashier');
   startLiveTime();
@@ -27,7 +35,6 @@ function showApp() {
 
 function startLiveTime() {
   if (liveTimeInterval) clearInterval(liveTimeInterval);
-  
   liveTimeInterval = setInterval(() => {
     const timeEl = document.getElementById('live-time');
     if (timeEl) {
@@ -40,22 +47,32 @@ function startLiveTime() {
   }, 1000);
 }
 
-function updateHeader() {
+export function updateHeader() {
   const user = getCurrentUser();
   const shift = getCurrentShift();
+  
+  const userEl = document.getElementById('header-user');
+  const roleEl = document.getElementById('header-role');
+  const shiftEl = document.getElementById('header-shift');
+
   if (!user) return;
 
-  document.getElementById('header-user').textContent = user.name;
-  document.getElementById('header-role').textContent = user.role === 'admin' ? 'ადმინი' : 'თანამშრომელი';
+  if (userEl) userEl.textContent = user.name || user.username;
+  if (roleEl) roleEl.textContent = user.role === 'admin' ? 'ადმინი' : 'თანამშრომელი';
   
-  if (shift) {
-    document.getElementById('header-shift').textContent = shift.shiftBlock?.name || 'აქტიური';
-  } else {
-    document.getElementById('header-shift').textContent = 'არ არის ცვლა';
+  if (shiftEl) {
+    if (shift && !shift.closed) {
+      shiftEl.textContent = shift.shiftBlock?.name || 'აქტიური ცვლა';
+    } else {
+      shiftEl.textContent = 'არ არის ცვლა';
+    }
   }
 }
 
-function navigateTo(page) {
+export function navigateTo(page) {
+  // Always keep shift status and user header fresh on page change
+  updateHeader();
+
   document.querySelectorAll('.nav-item').forEach(item => {
     item.classList.toggle('active', item.dataset.page === page);
   });
@@ -97,11 +114,19 @@ function navigateTo(page) {
 }
 
 async function init() {
-  // 1. Pull data from D: drive sync if local server is active
-  await syncFromDiskOnLoad();
+  try {
+    // 1. Pull data from D: drive disk sync immediately on startup
+    await syncFromDiskOnLoad();
+  } catch (err) {
+    console.error('⚠️ Disk sync error during startup:', err);
+  }
 
-  // 2. Safely initialize, merge, and persist stock for all current products
-  getStock();
+  try {
+    // 2. Initialize stock state in memory
+    getStock();
+  } catch (err) {
+    console.error('⚠️ Error loading stock state:', err);
+  }
 
   const loginForm = document.getElementById('login-form');
   if (loginForm) {
@@ -114,18 +139,24 @@ async function init() {
       if (result.success) {
         showApp();
       } else {
-        document.getElementById('login-error').textContent = result.message;
-        document.getElementById('login-error').classList.remove('hidden');
+        const errorEl = document.getElementById('login-error');
+        if (errorEl) {
+          errorEl.textContent = result.message;
+          errorEl.classList.remove('hidden');
+        }
       }
     });
   }
 
-  document.getElementById('logout-btn')?.addEventListener('click', () => {
-    if (confirm('ნამდვილად გსურთ გასვლა?')) {
-      logout();
-      showLogin();
-    }
-  });
+  const logoutBtn = document.getElementById('logout-btn');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+      if (confirm('ნამდვილად გსურთ გასვლა?')) {
+        logout();
+        showLogin();
+      }
+    });
+  }
 
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', (e) => {
@@ -145,4 +176,6 @@ async function init() {
 
 document.addEventListener('DOMContentLoaded', init);
 
+// Global window mappings
 window.navigateTo = navigateTo;
+window.updateHeader = updateHeader;
