@@ -2,6 +2,7 @@
 
 import { distributors } from './products.js';
 import { getCurrentUser, getCurrentShift, isAdmin } from './auth.js';
+import { saveToDisk } from './dbSync.js';
 
 export function getDistributions() {
   return JSON.parse(localStorage.getItem('distributions') || '[]');
@@ -9,6 +10,7 @@ export function getDistributions() {
 
 export function saveDistributions(list) {
   localStorage.setItem('distributions', JSON.stringify(list));
+  saveToDisk();
 }
 
 export function getExpenses() {
@@ -17,6 +19,7 @@ export function getExpenses() {
 
 export function saveExpenses(list) {
   localStorage.setItem('expenses', JSON.stringify(list));
+  saveToDisk();
 }
 
 export function getCustomDistributors() {
@@ -25,6 +28,7 @@ export function getCustomDistributors() {
 
 export function saveCustomDistributors(list) {
   localStorage.setItem('customDistributors', JSON.stringify(list));
+  saveToDisk();
 }
 
 let editingDistId = null;
