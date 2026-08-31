@@ -4,6 +4,70 @@ import { getCategoriesWithCustom, getProductById } from './products.js';
 import { getCurrentUser, getCurrentShift } from './auth.js';
 import { saveToDisk } from './dbSync.js';
 
+// --- NEW SYNC LOGIC ---
+// Helper to merge hardcoded categories with custom products and admin edits
+function getLiveCategories() {
+  const baseCats = getCategoriesWithCustom();
+  const overrides = JSON.parse(localStorage.getItem('productOverrides') || '{}');
+  const customProducts = JSON.parse(localStorage.getItem('customProducts') || '[]');
+  const deletedIds = JSON.parse(localStorage.getItem('deletedProducts') || '[]');
+
+  const liveCats = JSON.parse(JSON.stringify(baseCats));
+
+  liveCats.forEach(cat => {
+    // Remove deleted items
+    cat.items = cat.items.filter(p => !deletedIds.includes(p.id));
+    // Apply price/name overrides
+    cat.items = cat.items.map(p => {
+      if (overrides[p.id]) {
+        return { ...p, ...overrides[p.id] };
+      }
+      return p;
+    });
+  });
+
+  // Inject completely new custom products into their correct categories
+  customProducts.forEach(cp => {
+    if (deletedIds.includes(cp.id)) return;
+    let targetCat = liveCats.find(c => c.id === cp.categoryId);
+    if (!targetCat) {
+      targetCat = liveCats.find(c => c.id === 'other') || liveCats[0];
+    }
+    if (targetCat) {
+      const existingIdx = targetCat.items.findIndex(i => i.id === cp.id);
+      if (existingIdx === -1) {
+        targetCat.items.push(cp);
+      } else {
+        targetCat.items[existingIdx] = cp;
+      }
+    }
+  });
+
+  return liveCats;
+}
+
+// Helper to fetch exact product details including admin edits
+function getLiveProductById(id) {
+  const deletedIds = JSON.parse(localStorage.getItem('deletedProducts') || '[]');
+  if (deletedIds.includes(id)) return null;
+
+  const customProducts = JSON.parse(localStorage.getItem('customProducts') || '[]');
+  const customP = customProducts.find(cp => cp.id === id);
+  if (customP) return customP;
+
+  const baseP = getProductById(id);
+  if (baseP) {
+    const overrides = JSON.parse(localStorage.getItem('productOverrides') || '{}');
+    if (overrides[id]) {
+      return { ...baseP, ...overrides[id] };
+    }
+    return baseP;
+  }
+  return null;
+}
+// --- END SYNC LOGIC ---
+
+
 let cart = [];
 
 export function getCart() {
@@ -22,7 +86,7 @@ export function addToCart(productId, quantity = 1, customPrice = null, multiplie
     return;
   }
 
-  const product = getProductById(productId);
+  const product = getLiveProductById(productId);
   if (!product) return;
 
   let finalPrice = product.price;
@@ -99,7 +163,7 @@ export function updateCartQuantity(cartItemId, newQty) {
   }
 
   item.quantity = newQty;
-  const product = getProductById(item.productId);
+  const product = getLiveProductById(item.productId);
 
   if (item.type === 'liter' && product) {
     item.multiplier = newQty;
@@ -131,7 +195,7 @@ export function renderCart() {
   container.innerHTML = cart.map(item => {
     let unitMeta = `${item.unit} • ${item.price.toFixed(2)} ₾`;
     if (item.type === 'liter') {
-      const product = getProductById(item.productId);
+      const product = getLiveProductById(item.productId);
       const unitPrice = product ? product.price : (item.total / (item.quantity || 1));
       unitMeta = `${item.unit} • ${unitPrice.toFixed(2)} ₾/ლ`;
     } else if (item.type === 'weight') {
@@ -625,7 +689,7 @@ export function renderCashierPage() {
     </div>
   `;
 
-  const categories = getCategoriesWithCustom();
+  const categories = getLiveCategories();
   const tabsContainer = document.getElementById('category-tabs');
   tabsContainer.innerHTML = categories.map((cat, idx) => `
     <button class="category-tab ${idx === 0 ? 'active' : ''}" data-category="${cat.id}">${cat.name}</button>
@@ -666,7 +730,7 @@ export function renderCashierPage() {
 }
 
 function renderProducts(categoryId) {
-  const categories = getCategoriesWithCustom();
+  const categories = getLiveCategories();
   const cat = categories.find(c => c.id === categoryId);
   if (!cat) return;
 
@@ -688,7 +752,7 @@ function renderProducts(categoryId) {
 
       const id = card.dataset.id;
       const type = card.dataset.type;
-      const product = getProductById(id);
+      const product = getLiveProductById(id);
 
       if (type === 'liter') {
         openMultiplierModal(product);

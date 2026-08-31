@@ -87,7 +87,7 @@ export function renderDistributionPage() {
             </select>
           </div>
           <div class="form-group">
-            <label>გადახდის წყარო (საიდან გამოიფვა)</label>
+            <label>გადახდის წყარო</label>
             <select id="dist-paymentsource" class="form-input" required>
               <option value="cash_desk">კასიდან (ნაღდი ფულით)</option>
               <option value="admin">ადმინისტრაცია / ბარათი / სხვა</option>
@@ -128,7 +128,7 @@ export function renderDistributionPage() {
         <form id="expense-form" class="form-grid">
           <div class="form-group">
             <label>აღწერა</label>
-            <input type="text" id="exp-description" class="form-input" placeholder="პლასტმასის პარკები..." required>
+            <input type="text" id="exp-description" class="form-input" placeholder="პოლიეთილენის პარკები..." required>
           </div>
           <div class="form-group">
             <label>თანხა (₾)</label>
@@ -412,7 +412,7 @@ function renderDistributionsTable() {
       <td>${d.description}</td>
       <td>${d.totalAmount.toFixed(2)} ₾</td>
       <td><span class="badge ${d.status === 'გადახდილია' ? 'badge-success' : 'badge-warning'}">${d.status}</span></td>
-      <td>${d.paymentSource === 'cash_desk' ? 'კასრიდან' : 'ადმინი'}</td>
+      <td>${d.paymentSource === 'cash_desk' ? 'კასიდან' : 'ადმინი'}</td>
       <td>${d.userName || '-'}</td>
       ${isAdminUser ? `
         <td>
@@ -451,7 +451,7 @@ function renderExpensesTable() {
       <td>${e.date}</td>
       <td>${e.description}</td>
       <td>${e.amount.toFixed(2)} ₾</td>
-      <td>${e.paymentSource === 'cash_desk' ? 'კასრიდან' : 'ადმინი'}</td>
+      <td>${e.paymentSource === 'cash_desk' ? 'კასიდან' : 'ადმინი'}</td>
       <td>${e.userName || '-'}</td>
       <td>${e.username || '-'}</td>
       ${isAdminUser ? `

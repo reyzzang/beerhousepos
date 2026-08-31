@@ -1,3 +1,5 @@
+// shifts.js - Shift management, dynamic financial calculations, and admin controls
+
 import { getCurrentUser, getCurrentShift, getShifts, saveShifts, calculateShiftFinancials, isAdmin, determineShiftBlock } from './auth.js';
 import { getDistributions, getExpenses } from './distribution.js';
 import { saveToDisk, endShiftToDisk } from './dbSync.js';
@@ -10,6 +12,48 @@ function canCloseShift(user, currentShift) {
 
   return (user.username && currentShift.username && user.username === currentShift.username) ||
          (user.name && currentShift.userName && user.name === currentShift.userName);
+}
+
+// FIX: This now calculates dynamically from global sales for ALL shifts, not just active ones
+function calculateLiveShiftFinancials(shift) {
+  let totalSales = 0;
+  let cardTotal = 0;
+  let cashTotal = 0;
+
+  // Always pull fresh from global sales to catch admin edits
+  const globalSales = JSON.parse(localStorage.getItem('sales') || '[]');
+  
+  // Match sales that happened during this shift's timeframe by this user
+  const shiftSales = globalSales.filter(s => {
+    // If the sale already has the shiftId attached, use that
+    if (s.shiftId === shift.id) return true;
+    
+    // Otherwise, match by time boundary and user
+    const saleTime = new Date(s.timestamp || s.date).getTime();
+    const loginTime = new Date(shift.loginTime).getTime();
+    const logoutTime = shift.logoutTime ? new Date(shift.logoutTime).getTime() : Date.now();
+    const sameUser = (s.userName === shift.userName || s.user === shift.userName || s.userName === shift.username);
+    
+    return sameUser && saleTime >= loginTime && saleTime <= logoutTime;
+  });
+
+  shiftSales.forEach(s => {
+    totalSales += (s.total || s.totalAmount || 0);
+    cardTotal += (s.cardAmount || (s.paymentMethod === 'card' ? (s.total || 0) : 0));
+    cashTotal += (s.cashAmount || (s.paymentMethod === 'cash' ? (s.total || 0) : 0));
+  });
+
+  const distributions = getDistributions().filter(d => d.shiftId === shift.id && d.paymentSource === 'cash_desk');
+  const expenses = getExpenses().filter(e => e.shiftId === shift.id && e.paymentSource === 'cash_desk');
+
+  let cashDeskExpenses = 0;
+  distributions.forEach(d => cashDeskExpenses += (d.totalAmount || 0));
+  expenses.forEach(e => cashDeskExpenses += (e.amount || 0));
+
+  const salary = shift.salary || (shift.shiftBlock?.id === 1 ? 30 : 40);
+  const netCash = cashTotal - cashDeskExpenses - salary;
+
+  return { totalSales, cardTotal, cashTotal, cashDeskExpenses, salary, netCash };
 }
 
 export function renderShiftsPage() {
@@ -30,7 +74,7 @@ export function renderShiftsPage() {
         <p><strong>ბარათით გადახდილი:</strong> ${(breakdown.cardTotal || 0).toFixed(2)} ₾</p>
         <p><strong>ნაღდი ფული (სულ):</strong> ${(breakdown.cashTotal || 0).toFixed(2)} ₾</p>
         <p><strong>კასრიდან გადახდილი ხარჯები/დისტრიბუცია:</strong> -${(breakdown.cashDeskExpenses || 0).toFixed(2)} ₾</p>
-        <p><strong>ხელფასი (მითითებული):</strong> -${(currentShift.salary || 0).toFixed(2)} ₾</p>
+        <p><strong>ხელფასი (მითითებული):</strong> -${(breakdown.salary || 0).toFixed(2)} ₾</p>
         <hr style="margin: 5px 0;">
         <p style="font-size: 1.1em;"><strong>დარჩენილი სუფთა ნაღდი ფული:</strong> <span style="color: green; font-weight: bold;">${(breakdown.netCash || 0).toFixed(2)} ₾</span></p>
       </div>
@@ -137,41 +181,6 @@ export function renderShiftsPage() {
   renderAllShiftsTable(isAdminUser);
 }
 
-function calculateLiveShiftFinancials(shift) {
-  const sales = shift.sales || [];
-  let totalSales = 0;
-  let cardTotal = 0;
-  let cashTotal = 0;
-
-  sales.forEach(s => {
-    totalSales += (s.total || s.totalAmount || 0);
-    cardTotal += (s.cardAmount || 0);
-    cashTotal += (s.cashAmount || 0);
-  });
-
-  if (sales.length === 0) {
-    const globalSales = JSON.parse(localStorage.getItem('sales') || '[]');
-    const shiftSales = globalSales.filter(s => s.shiftId === shift.id);
-    shiftSales.forEach(s => {
-      totalSales += (s.total || s.totalAmount || 0);
-      cardTotal += (s.cardAmount || 0);
-      cashTotal += (s.cashAmount || 0);
-    });
-  }
-
-  const distributions = getDistributions().filter(d => d.shiftId === shift.id && d.paymentSource === 'cash_desk');
-  const expenses = getExpenses().filter(e => e.shiftId === shift.id && e.paymentSource === 'cash_desk');
-
-  let cashDeskExpenses = 0;
-  distributions.forEach(d => cashDeskExpenses += (d.totalAmount || 0));
-  expenses.forEach(e => cashDeskExpenses += (e.amount || 0));
-
-  const salary = shift.salary || 0;
-  const netCash = cashTotal - cashDeskExpenses - salary;
-
-  return { totalSales, cardTotal, cashTotal, cashDeskExpenses, salary, netCash };
-}
-
 async function startNewShift() {
   const user = getCurrentUser();
   if (!user) return alert('გთხოვთ შეხვიდეთ');
@@ -205,7 +214,6 @@ async function startNewShift() {
   shifts.push(shift);
   saveShifts(shifts);
 
-  // Sync state to disk immediately
   await saveToDisk();
 
   alert(`ცვლა დაიწყო: ${shiftBlock.name}`);
@@ -227,13 +235,14 @@ async function endCurrentShift() {
   current.logoutTime = new Date().toISOString();
   current.closed = true;
 
+  // Calculate finals one last time
   const financials = calculateLiveShiftFinancials(current);
   current.totalSales = financials.totalSales;
   current.cardTotal = financials.cardTotal;
   current.cashTotal = financials.cashTotal;
   current.cashDeskExpenses = financials.cashDeskExpenses;
   current.netCash = financials.netCash;
-
+  
   if (typeof calculateShiftFinancials === 'function') {
     try { calculateShiftFinancials(current); } catch (err) { console.warn(err); }
   }
@@ -246,7 +255,6 @@ async function endCurrentShift() {
   const shiftDate = current.date || new Date().toISOString().split('T')[0];
   const shiftNumber = current.shiftBlock?.id || 1;
 
-  // Archive finished shift and update main store
   await endShiftToDisk(shiftNumber, shiftDate, current);
 
   localStorage.removeItem('currentShift');
@@ -267,14 +275,9 @@ function renderAllShiftsTable(isAdminUser) {
     const login = new Date(s.loginTime).toLocaleString('ka-GE');
     const logout = s.logoutTime ? new Date(s.logoutTime).toLocaleString('ka-GE') : '—';
     
-    const breakdown = s.closed ? {
-      totalSales: s.totalSales || 0,
-      cardTotal: s.cardTotal || 0,
-      cashTotal: s.cashTotal || 0,
-      cashDeskExpenses: s.cashDeskExpenses || 0,
-      salary: s.salary || 0,
-      netCash: s.netCash || 0
-    } : calculateLiveShiftFinancials(s);
+    // FIX: Always dynamically calculate financials even for closed shifts 
+    // to instantly reflect any admin edits made in history.js
+    const breakdown = calculateLiveShiftFinancials(s);
 
     return `
       <tr>

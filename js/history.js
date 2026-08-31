@@ -139,6 +139,7 @@ export function renderHistoryPage() {
               <select id="sale-method" class="form-input" style="width: 100%; box-sizing: border-box;" required>
                 <option value="cash">ნაღდი</option>
                 <option value="card">ბარათი</option>
+                <option value="split">ნაღდი + ბარათი</option>
               </select>
             </div>
             <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem; min-width: 0;">
@@ -202,6 +203,52 @@ export function renderHistoryPage() {
     });
   });
 
+  // Smart Auto-Calculation Logic for the Edit Modal
+  const totalInp = document.getElementById('sale-total');
+  const cashInp = document.getElementById('sale-cash-amount');
+  const cardInp = document.getElementById('sale-card-amount');
+  const methodSel = document.getElementById('sale-method');
+
+  if (totalInp && cashInp && cardInp && methodSel) {
+    // If Admin changes the dropdown manually
+    methodSel.addEventListener('change', () => {
+      const t = parseFloat(totalInp.value) || 0;
+      if (methodSel.value === 'cash') {
+        cashInp.value = t.toFixed(2);
+        cardInp.value = 0;
+      } else if (methodSel.value === 'card') {
+        cardInp.value = t.toFixed(2);
+        cashInp.value = 0;
+      }
+    });
+
+    // If Admin types in the Cash field, auto-calculate Card and set to Split
+    cashInp.addEventListener('input', () => {
+      const t = parseFloat(totalInp.value) || 0;
+      const c = parseFloat(cashInp.value) || 0;
+      if (c > 0 && c < t) {
+        cardInp.value = (t - c).toFixed(2);
+        methodSel.value = 'split';
+      } else if (c === t) {
+        cardInp.value = 0;
+        methodSel.value = 'cash';
+      }
+    });
+
+    // If Admin types in the Card field, auto-calculate Cash and set to Split
+    cardInp.addEventListener('input', () => {
+      const t = parseFloat(totalInp.value) || 0;
+      const c = parseFloat(cardInp.value) || 0;
+      if (c > 0 && c < t) {
+        cashInp.value = (t - c).toFixed(2);
+        methodSel.value = 'split';
+      } else if (c === t) {
+        cashInp.value = 0;
+        methodSel.value = 'card';
+      }
+    });
+  }
+
   // Edit Sale Form Submit Handler
   const editSaleForm = document.getElementById('edit-sale-form');
   if (editSaleForm) {
@@ -211,13 +258,28 @@ export function renderHistoryPage() {
 
       const saleId = document.getElementById('edit-sale-id').value;
       const userName = document.getElementById('sale-username').value.trim();
-      const paymentMethod = document.getElementById('sale-method').value;
-      const paymentMethodLabel = paymentMethod === 'cash' ? 'ნაღდი' : 'ბარათი';
-      const total = parseFloat(document.getElementById('sale-total').value);
-      const cashAmount = parseFloat(document.getElementById('sale-cash-amount').value) || 0;
-      const cardAmount = parseFloat(document.getElementById('sale-card-amount').value) || 0;
+      let paymentMethod = document.getElementById('sale-method').value;
+      let total = parseFloat(document.getElementById('sale-total').value) || 0;
+      let cashAmount = parseFloat(document.getElementById('sale-cash-amount').value) || 0;
+      let cardAmount = parseFloat(document.getElementById('sale-card-amount').value) || 0;
       const timestampInput = document.getElementById('sale-timestamp').value.trim();
       const itemsText = document.getElementById('sale-items-desc').value.trim();
+
+      // Final safety net: Ensure the data perfectly matches reality before saving
+      if (cashAmount > 0 && cardAmount > 0) {
+        paymentMethod = 'split';
+        total = cashAmount + cardAmount; // Force total to equal the sum of both
+      } else if (cashAmount > 0 && cardAmount === 0) {
+        paymentMethod = 'cash';
+        cashAmount = total;
+      } else if (cardAmount > 0 && cashAmount === 0) {
+        paymentMethod = 'card';
+        cardAmount = total;
+      }
+
+      let paymentMethodLabel = 'ნაღდი';
+      if (paymentMethod === 'card') paymentMethodLabel = 'ბარათი';
+      if (paymentMethod === 'split') paymentMethodLabel = 'ნაღდი + ბარათი';
 
       const items = itemsText.split(',').map(part => {
         const match = part.match(/^(.*?)\s*\((\d+)\)?$/);
@@ -319,7 +381,11 @@ function renderSalesTable(filter = 'today') {
     const itemsStr = (s.items || []).map(i => `${i.name} (${i.quantity || i.qty || 1})`).join(', ');
     const time = new Date(s.timestamp).toLocaleString('ka-GE');
     const isCard = s.paymentMethod === 'card';
+    const isSplit = s.paymentMethod === 'split';
+    
+    // Add specific styles for labels
     const cardBadgeStyle = isCard ? 'style="background-color: #1d4ed8; color: #ffffff; font-weight: 600;"' : '';
+    const splitBadgeStyle = isSplit ? 'style="background-color: #f59e0b; color: #ffffff; font-weight: 600;"' : '';
 
     return `
       <tr>
@@ -328,9 +394,8 @@ function renderSalesTable(filter = 'today') {
         <td class="items-cell" style="padding: 10px; max-width: 250px; overflow: hidden; text-overflow: ellipsis;" title="${itemsStr}">${itemsStr.length > 60 ? itemsStr.slice(0, 60) + '...' : itemsStr}</td>
         <td style="padding: 10px;"><strong>${(s.total || 0).toFixed(2)} ₾</strong></td>
         <td style="padding: 10px;">
-          <span class="badge ${s.paymentMethod === 'cash' ? 'badge-success' : isCard ? 'badge-info' : 'badge-warning'}" ${cardBadgeStyle}>${s.paymentMethodLabel || s.paymentMethod || 'ნაღდი'}</span>
-          ${s.cashAmount > 0 ? `<br><small>ნაღდი: ${s.cashAmount.toFixed(2)} ₾</small>` : ''}
-          ${s.cardAmount > 0 ? `<br><small>ბარათი: ${s.cardAmount.toFixed(2)} ₾</small>` : ''}
+          <span class="badge ${s.paymentMethod === 'cash' ? 'badge-success' : isCard ? 'badge-info' : 'badge-warning'}" ${cardBadgeStyle} ${splitBadgeStyle}>${s.paymentMethodLabel || (isSplit ? 'ნაღდი + ბარათი' : isCard ? 'ბარათი' : 'ნაღდი')}</span>
+          ${s.cashAmount > 0 && s.cardAmount > 0 ? `<br><small>ნაღდი: ${s.cashAmount.toFixed(2)} ₾</small><br><small>ბარათი: ${s.cardAmount.toFixed(2)} ₾</small>` : ''}
         </td>
         ${isAdmin() ? `
           <td style="padding: 10px;">

@@ -199,7 +199,7 @@ export function restoreFromBackup(file) {
         }
       });
 
-      alert('მონაცემები წარმატებით გაერთიანდა (Smart Merge)! სისტემა ახლა გადაიტვირთება.');
+      alert('მონაცემები წარმატებით გაერთიანდა! სისტემა ახლა გადაიტვირთება.');
       window.location.reload(); // Refresh the page to load updated data
       
     } catch (err) {
