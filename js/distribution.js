@@ -281,7 +281,6 @@ export function renderDistributionPage() {
     </div>
   `;
 
-  // Tab switching
   document.querySelectorAll('.tabs .tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
@@ -291,11 +290,9 @@ export function renderDistributionPage() {
     });
   });
 
-  // Forms
   document.getElementById('distribution-form').addEventListener('submit', handleDistributionSubmit);
   document.getElementById('expense-form').addEventListener('submit', handleExpenseSubmit);
 
-  // Modal close
   document.querySelectorAll('.modal-close').forEach(btn => {
     btn.addEventListener('click', () => {
       const modalId = btn.dataset.modal;
@@ -487,7 +484,6 @@ function renderDistributorsList() {
   ul.innerHTML = fixed + custom || '<li>დისტრიბუტორები არ არის</li>';
 }
 
-// Edit Distribution Modal
 function editDistribution(id) {
   const list = getDistributions();
   const item = list.find(d => d.id === id);
@@ -538,7 +534,6 @@ function saveEditedDistribution() {
   renderDistributionsTable();
 }
 
-// Edit Expense Modal
 function editExpense(id) {
   const list = getExpenses();
   const item = list.find(e => e.id === id);

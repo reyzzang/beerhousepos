@@ -1,11 +1,71 @@
 // auth.js - Login and shift tracking (shift continues even if user logs out)
 
-const USERS = {
+const DEFAULT_USERS = {
   admin: { password: 'admin123', role: 'admin', name: 'ადმინი' },
   Mate: { password: 'mate1', role: 'employee', name: 'მათე' },
   Luka: { password: 'luka1', role: 'employee', name: 'ლუკა' },
   Bakari: { password: 'bakari1', role: 'employee', name: 'ბაქარი' }
 };
+
+export function getUsers() {
+  try {
+    const stored = localStorage.getItem('appUsers');
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error("Error loading users:", e);
+  }
+  localStorage.setItem('appUsers', JSON.stringify(DEFAULT_USERS));
+  return DEFAULT_USERS;
+}
+
+export function saveUsers(users) {
+  localStorage.setItem('appUsers', JSON.stringify(users));
+}
+
+export function updateUserCredentials(targetUsername, newUsername, newPassword, newName) {
+  let users = getUsers();
+  
+  const actualKey = Object.keys(users).find(
+    k => k.toLowerCase() === targetUsername.trim().toLowerCase()
+  );
+
+  if (!actualKey) {
+    return { success: false, message: 'მომხმარებელი ვერ მოიძებნა' };
+  }
+
+  const trimmedNewUser = newUsername.trim();
+  
+  if (trimmedNewUser.toLowerCase() !== actualKey.toLowerCase() && users[trimmedNewUser]) {
+    return { success: false, message: 'ეს სახელი დაკავებულია' };
+  }
+
+  const userData = users[actualKey];
+  
+  if (trimmedNewUser !== actualKey) {
+    delete users[actualKey];
+  }
+
+  users[trimmedNewUser] = {
+    password: newPassword || userData.password,
+    role: userData.role,
+    name: newName || userData.name
+  };
+
+  saveUsers(users);
+
+  const currentUser = getCurrentUser();
+  if (currentUser && currentUser.username.toLowerCase() === actualKey.toLowerCase()) {
+    localStorage.setItem('currentUser', JSON.stringify({
+      username: trimmedNewUser,
+      name: users[trimmedNewUser].name,
+      role: users[trimmedNewUser].role
+    }));
+  }
+
+  return { success: true, message: 'მონაცემები განახლდა' };
+}
 
 export function getCurrentUser() {
   const data = localStorage.getItem('currentUser');
@@ -36,10 +96,10 @@ export function determineShiftBlock(date = new Date()) {
 }
 
 export function login(username, password) {
-  // Make username comparison case-insensitive
   const enteredUsername = username.trim().toLowerCase();
+  const users = getUsers();
 
-  const actualUsername = Object.keys(USERS).find(
+  const actualUsername = Object.keys(users).find(
     key => key.toLowerCase() === enteredUsername
   );
 
@@ -47,13 +107,12 @@ export function login(username, password) {
     return { success: false, message: 'არასწორი მომხმარებელი ან პაროლი' };
   }
 
-  const user = USERS[actualUsername];
+  const user = users[actualUsername];
 
   if (user.password !== password) {
     return { success: false, message: 'არასწორი მომხმარებელი ან პაროლი' };
   }
 
-  // ONLY login user - NO auto shift start
   localStorage.setItem('currentUser', JSON.stringify({
     username: actualUsername,
     name: user.name,
@@ -72,7 +131,6 @@ export function login(username, password) {
 
 export function logout() {
   localStorage.removeItem('currentUser');
-  // Shift continues even if user logs out
 }
 
 function closeCurrentShift() {

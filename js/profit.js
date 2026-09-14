@@ -1,25 +1,16 @@
 // profit.js - Admin Profit Calculation and Analytics Page
 
-import { getCurrentUser, isAdmin } from './auth.js';
+import { getCurrentUser, isAdmin, getShifts, saveShifts } from './auth.js';
 import { getSales, saveSales } from './history.js';
 import { getAllProducts } from './products.js';
-
-// Helper to remove accents/umlauts and make text lowercase for perfect matching
-function normalizeName(str) {
-  return (str || '')
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, ""); // Turns 'ä' into 'a', etc.
-}
+import { getDistributions, getExpenses } from './distribution.js';
+import { saveToDisk } from './dbSync.js';
 
 function getLatestProductCatalog() {
   let catalog = [];
-  
   try {
     const allProducts = getAllProducts() || [];
     const overrides = JSON.parse(localStorage.getItem('productOverrides') || '{}');
-    
     allProducts.forEach(p => {
       if (overrides[p.id]) {
         catalog.push({
@@ -61,50 +52,76 @@ export function renderProfitPage() {
 
   content.innerHTML = `
     <div class="page-header">
-      <h1>მოგების ანალიტიკა (ფინანსები)</h1>
+      <h1>მოგების ანალიტიკა (ტრანზაქციები)</h1>
     </div>
 
-    <div class="metrics-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 20px;">
-      <div class="card" style="padding: 20px; border-left: 4px solid #0275d8;">
-        <h3 style="font-size: 14px; color: #666; margin-bottom: 8px;">სულ შემოსავალი</h3>
-        <p id="total-revenue-val" style="font-size: 24px; font-weight: bold; color: #333;">0.00 ₾</p>
+    <div class="metrics-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px; margin-bottom: 20px;">
+      <div class="card" style="padding: 15px; border-left: 4px solid #0275d8;">
+        <h3 style="font-size: 13px; color: #666; margin-bottom: 8px;">შემოსავალი</h3>
+        <p id="total-revenue-val" style="font-size: 18px; font-weight: bold; color: #333;">0.00 ₾</p>
       </div>
-      <div class="card" style="padding: 20px; border-left: 4px solid #d9534f;">
-        <h3 style="font-size: 14px; color: #666; margin-bottom: 8px;">სულ თვითღირებულება</h3>
-        <p id="total-cost-val" style="font-size: 24px; font-weight: bold; color: #d9534f;">0.00 ₾</p>
+      <div class="card" style="padding: 15px; border-left: 4px solid #f0ad4e;">
+        <h3 style="font-size: 13px; color: #666; margin-bottom: 8px;">ნაღდი</h3>
+        <p id="total-cash-val" style="font-size: 18px; font-weight: bold; color: #f0ad4e;">0.00 ₾</p>
       </div>
-      <div class="card" style="padding: 20px; border-left: 4px solid #5cb85c;">
-        <h3 style="font-size: 14px; color: #666; margin-bottom: 8px;">სუფთა მოგება</h3>
-        <p id="total-profit-val" style="font-size: 24px; font-weight: bold; color: #5cb85c;">0.00 ₾</p>
+      <div class="card" style="padding: 15px; border-left: 4px solid #5bc0de;">
+        <h3 style="font-size: 13px; color: #666; margin-bottom: 8px;">ბარათი</h3>
+        <p id="total-card-val" style="font-size: 18px; font-weight: bold; color: #5bc0de;">0.00 ₾</p>
+      </div>
+      <div class="card" style="padding: 15px; border-left: 4px solid #d9534f;">
+        <h3 style="font-size: 13px; color: #666; margin-bottom: 8px;">თვითღირებულება</h3>
+        <p id="total-cost-val" style="font-size: 18px; font-weight: bold; color: #d9534f;">0.00 ₾</p>
+      </div>
+      <div class="card" style="padding: 15px; border-left: 4px solid #d9534f;">
+        <h3 style="font-size: 13px; color: #666; margin-bottom: 8px;">ხარჯი და დისტრიბუცია</h3>
+        <p id="total-expenses-val" style="font-size: 18px; font-weight: bold; color: #d9534f;">0.00 ₾</p>
+      </div>
+      <div class="card" style="padding: 15px; border-left: 4px solid #d9534f;">
+        <h3 style="font-size: 13px; color: #666; margin-bottom: 8px;">ხელფასები</h3>
+        <p id="total-salaries-val" style="font-size: 18px; font-weight: bold; color: #d9534f;">0.00 ₾</p>
+      </div>
+      <div class="card" style="padding: 15px; border-left: 4px solid #5cb85c; background-color: #f4fdf5;">
+        <h3 style="font-size: 13px; color: #2e7d32; margin-bottom: 8px;">სუფთა მოგება</h3>
+        <p id="total-net-profit-val" style="font-size: 18px; font-weight: bold; color: #2e7d32;">0.00 ₾</p>
       </div>
     </div>
 
     <div class="card" style="margin-bottom: 20px;">
-      <div class="filters" style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; align-items: center;">
-        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-          <button class="btn btn-outline profit-filter active" data-filter="today">დღეს</button>
-          <button class="btn btn-outline profit-filter" data-filter="week">ამ კვირაში</button>
-          <button class="btn btn-outline profit-filter" data-filter="month">ამ თვეში</button>
+      <div class="filters" style="display: flex; gap: 15px; flex-wrap: wrap; justify-content: space-between; align-items: center;">
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+          <button class="btn btn-outline profit-filter active" data-filter="year">ამ წელში</button>
           <button class="btn btn-outline profit-filter" data-filter="all">ყველა დროის</button>
-        </div>
-        <div style="flex-grow: 1; max-width: 300px;">
-          <input type="text" id="profit-search" class="form-input" placeholder="🔍 პროდუქტის ძიება..." style="width: 100%;">
+          
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; border-left: 2px solid #eee; padding-left: 10px; margin-left: 5px;">
+            <span style="color: #666; font-size: 13px;">ზუსტი დღე:</span>
+            <input type="date" id="exact-date-input" class="form-input" style="padding: 6px; font-size: 13px;">
+            <button class="btn btn-primary btn-sm profit-filter" data-filter="exact" id="exact-date-btn">ძიება</button>
+            <button class="btn btn-danger btn-sm" id="delete-exact-day-btn" title="დღის წაშლა">წაშლა</button>
+          </div>
+
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; border-left: 2px solid #eee; padding-left: 10px; margin-left: 5px;">
+            <span style="color: #666; font-size: 13px;">პერიოდი:</span>
+            <input type="datetime-local" id="custom-start-date" class="form-input" style="padding: 6px; font-size: 13px;">
+            <span style="color: #666; font-size: 13px;">-დან</span>
+            <input type="datetime-local" id="custom-end-date" class="form-input" style="padding: 6px; font-size: 13px;">
+            <button class="btn btn-primary btn-sm profit-filter" data-filter="custom" id="custom-date-btn">ძიება</button>
+          </div>
         </div>
       </div>
     </div>
 
     <div class="card">
-      <h2>პროდუქტების მიხედვით მოგების განაწილება</h2>
+      <h2>გაყიდვების ტრანზაქციები</h2>
       <div class="table-responsive mt-2" style="width: 100%; overflow-x: auto;">
         <table class="data-table" id="profit-table" style="width: 100%; min-width: 850px; border-collapse: collapse; white-space: nowrap;">
           <thead>
             <tr style="background-color: #f8f9fa; border-bottom: 2px solid #ddd;">
-              <th style="text-align: left; padding: 12px 10px;">პროდუქტი</th>
-              <th style="text-align: center; padding: 12px 10px;">რაოდენობა</th>
-              <th style="text-align: right; padding: 12px 10px;">საშ. გასაყიდი ფასი</th>
-              <th style="text-align: right; padding: 12px 10px;">თვითღირებულება</th>
-              <th style="text-align: right; padding: 12px 10px;">ერთეულის მოგება</th>
-              <th style="text-align: right; padding: 12px 10px;">ჯამური მოგება</th>
+              <th style="text-align: left; padding: 12px 10px;">დრო</th>
+              <th style="text-align: left; padding: 12px 10px;">თანამშრომელი</th>
+              <th style="text-align: left; padding: 12px 10px;">პროდუქტები</th>
+              <th style="text-align: right; padding: 12px 10px;">ჯამი</th>
+              <th style="text-align: center; padding: 12px 10px;">გადახდის მეთოდი</th>
+              <th style="text-align: right; padding: 12px 10px;">მოგება</th>
               <th style="text-align: center; padding: 12px 10px;">მოქმედება</th>
             </tr>
           </thead>
@@ -113,99 +130,240 @@ export function renderProfitPage() {
       </div>
     </div>
 
-    <!-- Edit Profit Modal -->
-    <div class="modal" id="edit-profit-modal">
-      <div class="modal-content modal-sm">
-        <div class="modal-header">
-          <h3>თვითღირებულების რედაქტირება</h3>
-          <button class="modal-close" data-modal="edit-profit-modal">×</button>
+    <!-- Centered & Modern Edit Transaction Modal -->
+    <div class="modal" id="edit-transaction-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 9999;">
+      <div class="modal-content" style="background: #fff; padding: 25px; border-radius: 8px; width: 100%; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+        <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+          <h3 style="margin: 0; font-size: 18px;">ტრანზაქციის რედაქტირება</h3>
+          <button class="modal-close" data-modal="edit-transaction-modal" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #666;">×</button>
         </div>
         <div class="modal-body">
-          <p id="edit-profit-name-display" style="font-weight: bold; margin-bottom: 15px; font-size: 16px;"></p>
-          <input type="hidden" id="edit-profit-original-name">
-          <div class="form-group">
-            <label>ახალი თვითღირებულება (₾)</label>
-            <input type="number" id="edit-profit-cost" class="form-input" step="0.01" min="0" placeholder="მაგ: 2.50">
+          <input type="hidden" id="edit-sale-id">
+          <input type="hidden" id="edit-sale-total">
+          
+          <div class="form-group" style="margin-bottom: 15px;">
+            <label style="display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px;">ტრანზაქციის ჯამი:</label>
+            <p id="edit-modal-total-display" style="font-size: 16px; color: #0275d8; font-weight: bold; margin: 0;"></p>
           </div>
+
+          <div class="form-group" style="margin-bottom: 15px;">
+            <label style="display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px;">გადახდის მეთოდი</label>
+            <select id="edit-payment-method" class="form-input" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+              <option value="cash">ნაღდი</option>
+              <option value="card">ბარათი</option>
+              <option value="split">ნაღდი + ბარათი</option>
+            </select>
+          </div>
+
+          <div class="form-group mt-2" id="split-amounts-group" style="display:none; background: #f8f9fa; padding: 12px; border-radius: 6px; border: 1px solid #eee; margin-bottom: 15px;">
+            <label style="display: block; margin-bottom: 4px; font-size: 13px;">ნაღდი თანხა (₾)</label>
+            <input type="number" id="edit-cash-amount" class="form-input" step="0.01" min="0" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 10px;">
+            
+            <label style="display: block; margin-bottom: 4px; font-size: 13px;">ბარათის თანხა (₾)</label>
+            <input type="number" id="edit-card-amount" class="form-input" step="0.01" min="0" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px;">
+          </div>
+
           <div class="modal-actions mt-3">
-            <button id="save-profit-edit-btn" class="btn btn-primary" style="width: 100%;">შენახვა და გადათვლა</button>
+            <button id="save-transaction-edit-btn" class="btn btn-primary" style="width: 100%; padding: 10px; background: #0275d8; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">შენახვა</button>
           </div>
         </div>
       </div>
     </div>
   `;
 
-  // Attach Filter Listeners
+  // Preset Filters (Year / All Time) clear out exact/custom dates
   document.querySelectorAll('.profit-filter').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      document.querySelectorAll('.profit-filter').forEach(b => b.classList.remove('active'));
-      e.target.classList.add('active');
-      calculateAndRenderProfits(e.target.dataset.filter);
-    });
-  });
+    if (btn.dataset.filter === 'year' || btn.dataset.filter === 'all') {
+      btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.profit-filter').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        
+        // Clear date inputs and storage memory when switching to presets
+        document.getElementById('exact-date-input').value = '';
+        document.getElementById('custom-start-date').value = '';
+        document.getElementById('custom-end-date').value = '';
+        sessionStorage.removeItem('profitExactDate');
+        sessionStorage.removeItem('profitCustomStart');
+        sessionStorage.removeItem('profitCustomEnd');
 
-  // Attach Search Listener
-  const searchInput = document.getElementById('profit-search');
-  if (searchInput) {
-    searchInput.addEventListener('input', () => {
-      const activeFilter = document.querySelector('.profit-filter.active')?.dataset.filter || 'today';
-      calculateAndRenderProfits(activeFilter);
-    });
-  }
-
-  // Attach Modal Close Handlers
-  document.querySelectorAll('.modal-close').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.getElementById(btn.dataset.modal).classList.remove('active');
-    });
-  });
-
-  // Attach Edit Save Handler
-  document.getElementById('save-profit-edit-btn').addEventListener('click', () => {
-    const targetName = document.getElementById('edit-profit-original-name').value;
-    const newCost = parseFloat(document.getElementById('edit-profit-cost').value) || 0;
-    
-    const activeCatalog = getLatestProductCatalog();
-    let overrides = JSON.parse(localStorage.getItem('productOverrides') || '{}');
-    let customProducts = JSON.parse(localStorage.getItem('customProducts') || '[]');
-    let updated = false;
-
-    // Find and update the cost price in the catalog
-    activeCatalog.forEach(p => {
-      if (normalizeName(p.name) === normalizeName(targetName)) {
-        updated = true;
-        if (p.id && String(p.id).startsWith('custom_')) {
-          const cIdx = customProducts.findIndex(cp => cp.id === p.id);
-          if (cIdx !== -1) customProducts[cIdx].costPrice = newCost;
-        } else if (p.id) {
-          if (!overrides[p.id]) overrides[p.id] = { name: p.name };
-          overrides[p.id].costPrice = newCost;
-        }
-      }
-    });
-
-    if (updated) {
-      localStorage.setItem('productOverrides', JSON.stringify(overrides));
-      localStorage.setItem('customProducts', JSON.stringify(customProducts));
-      
-      document.getElementById('edit-profit-modal').classList.remove('active');
-      const activeFilter = document.querySelector('.profit-filter.active')?.dataset.filter || 'today';
-      calculateAndRenderProfits(activeFilter);
-      alert('თვითღირებულება განახლდა და მოგება გადაითვალა!');
-    } else {
-      alert('პროდუქტი კატალოგში ვერ მოიძებნა.');
+        calculateAndRenderProfits(e.target.dataset.filter);
+      });
     }
   });
 
-  calculateAndRenderProfits('today');
+  document.getElementById('exact-date-btn').addEventListener('click', () => {
+    document.querySelectorAll('.profit-filter').forEach(b => b.classList.remove('active'));
+    document.getElementById('exact-date-btn').classList.add('active');
+    calculateAndRenderProfits('exact');
+  });
+
+  document.getElementById('custom-date-btn').addEventListener('click', () => {
+    document.querySelectorAll('.profit-filter').forEach(b => b.classList.remove('active'));
+    document.getElementById('custom-date-btn').classList.add('active');
+    calculateAndRenderProfits('custom');
+  });
+
+  document.getElementById('delete-exact-day-btn').addEventListener('click', async () => {
+    const targetDate = document.getElementById('exact-date-input').value;
+    if (!targetDate) {
+      alert("გთხოვთ, ჯერ აირჩიოთ ზუსტი დღე კალენდარში წასაშლელად.");
+      return;
+    }
+
+    if (confirm(`ნამდვილად გსურთ სრულად წაშალოთ ${targetDate} თარიღის ყველა მონაცემი?`)) {
+      const isTargetDay = (timestamp) => {
+        if (!timestamp) return false;
+        const d = new Date(timestamp);
+        if (isNaN(d.getTime())) return false;
+        return (d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')) === targetDate;
+      };
+
+      let sales = getSales() || [];
+      sales = sales.filter(s => !isTargetDay(s.timestamp || s.date));
+      saveSales(sales);
+
+      let shifts = getShifts() || [];
+      shifts = shifts.filter(s => !isTargetDay(s.loginTime || s.date));
+      saveShifts(shifts);
+
+      let distributions = getDistributions() || [];
+      distributions = distributions.filter(d => !isTargetDay(d.timestamp || d.date));
+      localStorage.setItem('distributions', JSON.stringify(distributions));
+
+      let expenses = getExpenses() || [];
+      expenses = expenses.filter(e => !isTargetDay(e.timestamp || e.date));
+      localStorage.setItem('expenses', JSON.stringify(expenses));
+
+      await saveToDisk();
+      alert('მონაცემები წარმატებით წაიშალა.');
+      calculateAndRenderProfits('year');
+    }
+  });
+
+  document.querySelectorAll('.modal-close').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById(btn.dataset.modal).style.display = 'none';
+    });
+  });
+
+  const paymentSelect = document.getElementById('edit-payment-method');
+  const cashInput = document.getElementById('edit-cash-amount');
+  const cardInput = document.getElementById('edit-card-amount');
+
+  paymentSelect.addEventListener('change', () => {
+    const splitGroup = document.getElementById('split-amounts-group');
+    const totalSaleAmount = parseFloat(document.getElementById('edit-sale-total').value) || 0;
+    
+    if (paymentSelect.value === 'split') {
+      splitGroup.style.display = 'block';
+      if (!cashInput.value) {
+        cashInput.value = totalSaleAmount.toFixed(2);
+        cardInput.value = (0).toFixed(2);
+      }
+    } else {
+      splitGroup.style.display = 'none';
+    }
+  });
+
+  cashInput.addEventListener('input', () => {
+    const totalSaleAmount = parseFloat(document.getElementById('edit-sale-total').value) || 0;
+    const cashVal = parseFloat(cashInput.value);
+    if (!isNaN(cashVal)) {
+      const remainingCard = Math.max(0, totalSaleAmount - cashVal);
+      cardInput.value = remainingCard.toFixed(2);
+    } else {
+      cardInput.value = totalSaleAmount.toFixed(2);
+    }
+  });
+
+  cardInput.addEventListener('input', () => {
+    const totalSaleAmount = parseFloat(document.getElementById('edit-sale-total').value) || 0;
+    const cardVal = parseFloat(cardInput.value);
+    if (!isNaN(cardVal)) {
+      const remainingCash = Math.max(0, totalSaleAmount - cardVal);
+      cashInput.value = remainingCash.toFixed(2);
+    } else {
+      cashInput.value = totalSaleAmount.toFixed(2);
+    }
+  });
+
+  document.getElementById('save-transaction-edit-btn').addEventListener('click', async () => {
+    const saleId = document.getElementById('edit-sale-id').value;
+    const method = document.getElementById('edit-payment-method').value;
+    const totalSaleAmount = parseFloat(document.getElementById('edit-sale-total').value) || 0;
+    
+    let sales = getSales() || [];
+    const sale = sales.find(s => String(s.id) === String(saleId));
+    if (!sale) {
+      alert('ტრანზაქცია ვერ მოიძებნა.');
+      return;
+    }
+
+    sale.paymentMethod = method;
+    if (method === 'cash') {
+      sale.paymentMethodLabel = 'ნაღდი';
+      sale.cashAmount = totalSaleAmount;
+      sale.cardAmount = 0;
+    } else if (method === 'card') {
+      sale.paymentMethodLabel = 'ბარათი';
+      sale.cashAmount = 0;
+      sale.cardAmount = totalSaleAmount;
+    } else if (method === 'split') {
+      sale.paymentMethodLabel = 'ნაღდი + ბარათი';
+      sale.cashAmount = parseFloat(cashInput.value) || 0;
+      sale.cardAmount = parseFloat(cardInput.value) || 0;
+    }
+
+    saveSales(sales);
+    await saveToDisk();
+
+    document.getElementById('edit-transaction-modal').style.display = 'none';
+    const activePreset = sessionStorage.getItem('profitActiveFilter') || 'year';
+    calculateAndRenderProfits(activePreset);
+    alert('ტრანზაქცია განახლდა!');
+  });
+
+  // Restore state from sessionStorage
+  const savedFilter = sessionStorage.getItem('profitActiveFilter') || 'year';
+  const savedExactDate = sessionStorage.getItem('profitExactDate') || '';
+  const savedCustomStart = sessionStorage.getItem('profitCustomStart') || '';
+  const savedCustomEnd = sessionStorage.getItem('profitCustomEnd') || '';
+
+  document.getElementById('exact-date-input').value = savedExactDate;
+  document.getElementById('custom-start-date').value = savedCustomStart;
+  document.getElementById('custom-end-date').value = savedCustomEnd;
+  
+  document.querySelectorAll('.profit-filter').forEach(b => b.classList.remove('active'));
+  const activeBtn = document.querySelector(`.profit-filter[data-filter="${savedFilter}"]`);
+  if (activeBtn) activeBtn.classList.add('active');
+
+  calculateAndRenderProfits(savedFilter);
 }
 
-function calculateAndRenderProfits(filter = 'today') {
+function calculateAndRenderProfits(filter = 'year') {
+  sessionStorage.setItem('profitActiveFilter', filter);
+  if (filter === 'exact') {
+    sessionStorage.setItem('profitExactDate', document.getElementById('exact-date-input').value);
+    sessionStorage.removeItem('profitCustomStart');
+    sessionStorage.removeItem('profitCustomEnd');
+  } else if (filter === 'custom') {
+    sessionStorage.setItem('profitCustomStart', document.getElementById('custom-start-date').value);
+    sessionStorage.setItem('profitCustomEnd', document.getElementById('custom-end-date').value);
+    sessionStorage.removeItem('profitExactDate');
+  } else {
+    sessionStorage.removeItem('profitExactDate');
+    sessionStorage.removeItem('profitCustomStart');
+    sessionStorage.removeItem('profitCustomEnd');
+  }
+
   const tbody = document.querySelector('#profit-table tbody');
   const revenueEl = document.getElementById('total-revenue-val');
   const costEl = document.getElementById('total-cost-val');
-  const profitEl = document.getElementById('total-profit-val');
-  const searchQuery = (document.getElementById('profit-search')?.value || '').trim().toLowerCase();
+  const expEl = document.getElementById('total-expenses-val');
+  const salEl = document.getElementById('total-salaries-val');
+  const netProfitEl = document.getElementById('total-net-profit-val');
+  const cashEl = document.getElementById('total-cash-val');
+  const cardEl = document.getElementById('total-card-val');
 
   if (!tbody) return;
 
@@ -215,175 +373,172 @@ function calculateAndRenderProfits(filter = 'today') {
 
   const costMap = {};
   activeCatalog.forEach(p => {
-    const cleanName = normalizeName(p.name);
-    const buyPrice = parseFloat(p.costPrice || 0);
-    if (cleanName) {
-      costMap[cleanName] = buyPrice;
-    }
+    const cleanName = (p.name || '').trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    costMap[cleanName] = parseFloat(p.costPrice || 0);
   });
 
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  let exactDateVal = document.getElementById('exact-date-input').value;
+  let customStartTime = document.getElementById('custom-start-date').value ? new Date(document.getElementById('custom-start-date').value).getTime() : null;
+  let customEndTime = document.getElementById('custom-end-date').value ? new Date(document.getElementById('custom-end-date').value).getTime() : null;
 
-  const filteredSales = sales.filter(s => {
-    const d = new Date(s.timestamp || s.date);
-    if (isNaN(d.getTime())) return true; 
+  const isMatch = (timestamp) => {
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return false; 
+    const timeMs = d.getTime();
 
-    const saleTime = d.getTime();
-
-    if (filter === 'today') {
-      return saleTime >= startOfToday;
-    } else if (filter === 'week') {
-      const weekAgo = new Date(now);
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      return saleTime >= weekAgo.getTime();
-    } else if (filter === 'month') {
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    if (filter === 'year') {
+      return d.getFullYear() === now.getFullYear();
+    } else if (filter === 'all') {
+      return true;
+    } else if (filter === 'exact') {
+      if (!exactDateVal) return true;
+      return (d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')) === exactDateVal;
+    } else if (filter === 'custom') {
+      if (customStartTime && timeMs < customStartTime) return false;
+      if (customEndTime && timeMs > customEndTime) return false;
+      return true;
     }
     return true; 
-  });
+  };
 
   let overallRevenue = 0;
   let overallCost = 0;
-  const productProfitMap = {};
+  let overallCash = 0;
+  let overallCard = 0;
+  let overallExpenses = 0;
+  let overallSalaries = 0;
 
-  filteredSales.forEach(sale => {
-    const items = sale.items || sale.products || []; 
+  const filteredSales = sales.filter(s => isMatch(s.timestamp || s.date));
+
+  const transactionList = filteredSales.map(sale => {
+    const saleTotal = parseFloat(sale.total || sale.totalAmount || 0);
+    const cAmount = parseFloat(sale.cashAmount || (sale.paymentMethod === 'cash' ? saleTotal : 0));
+    const cdAmount = parseFloat(sale.cardAmount || (sale.paymentMethod === 'card' ? saleTotal : 0));
+
+    overallRevenue += saleTotal;
+    overallCash += cAmount;
+    overallCard += cdAmount;
+
+    let saleCost = 0;
+    const items = sale.items || sale.products || [];
     items.forEach(item => {
       const name = item.name || 'უცნობი';
-      const cleanKey = normalizeName(name);
+      const cleanKey = name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       const qty = parseFloat(item.quantity || item.qty || item.count || 1);
       
-      const lineTotal = parseFloat(item.total || item.totalPrice || (item.price * qty) || 0);
-      const sellingPriceUnit = qty > 0 ? (lineTotal / qty) : 0;
-
-      let unitCost = 0;
-      if (costMap[cleanKey] !== undefined) {
-        unitCost = costMap[cleanKey];
-      } else {
+      let unitCost = costMap[cleanKey] !== undefined ? costMap[cleanKey] : 0;
+      if (unitCost === 0) {
         const matchedKey = Object.keys(costMap).find(k => k.includes(cleanKey) || cleanKey.includes(k));
         if (matchedKey) unitCost = costMap[matchedKey];
       }
-
-      const lineCost = unitCost * qty;
-
-      // Grouping
-      if (!productProfitMap[name]) {
-        productProfitMap[name] = {
-          name: name,
-          qty: 0,
-          totalRevenue: 0,
-          totalCost: 0,
-          unitSellingPriceSum: 0,
-          sellingPriceCount: 0,
-          unitCost: unitCost 
-        };
-      }
-
-      productProfitMap[name].qty += qty;
-      productProfitMap[name].totalRevenue += lineTotal;
-      productProfitMap[name].totalCost += lineCost;
-      productProfitMap[name].unitSellingPriceSum += sellingPriceUnit;
-      productProfitMap[name].sellingPriceCount += 1;
+      saleCost += unitCost * qty;
     });
+
+    overallCost += saleCost;
+    const saleProfit = saleTotal - saleCost;
+
+    return {
+      id: sale.id,
+      timestamp: new Date(sale.timestamp || sale.date).toLocaleString('ka-GE'),
+      userName: sale.userName || sale.username || 'ადმინი',
+      itemsText: items.map(i => `${i.name} (x${i.quantity || i.qty || 1})`).join(', '),
+      total: saleTotal,
+      profit: saleProfit,
+      methodLabel: sale.paymentMethodLabel || (sale.paymentMethod === 'cash' ? 'ნაღდი' : sale.paymentMethod === 'card' ? 'ბარათი' : 'ნაღდი + ბარათი'),
+      method: sale.paymentMethod || 'cash',
+      cashAmount: cAmount,
+      cardAmount: cdAmount
+    };
   });
 
-  // Calculate top-level overall totals BEFORE filtering by search
-  Object.values(productProfitMap).forEach(p => {
-    overallRevenue += p.totalRevenue;
-    overallCost += p.totalCost;
-  });
+  // Process Shifts for Salaries
+  try {
+    const allShifts = getShifts() || [];
+    const filteredShifts = allShifts.filter(s => isMatch(s.loginTime || s.date));
+    filteredShifts.forEach(s => {
+      let shiftSal = 0;
+      if (s.shiftBlock && s.shiftBlock.id !== undefined) {
+        shiftSal = String(s.shiftBlock.id) === "1" ? 30 : 40;
+      } else {
+        const loginHour = new Date(s.loginTime || s.date).getHours();
+        shiftSal = (loginHour >= 9 && loginHour < 16) ? 30 : 40;
+      }
+      overallSalaries += shiftSal;
+    });
+  } catch(e) {
+    console.error("Error calculating salaries:", e);
+  }
 
-  const overallProfit = overallRevenue - overallCost;
+  // Process Distributions & Expenses
+  try {
+    const allDistributions = getDistributions() || [];
+    allDistributions.filter(d => isMatch(d.timestamp || d.date)).forEach(d => {
+      overallExpenses += parseFloat(d.totalAmount || d.amount || 0);
+    });
+
+    const allExpenses = getExpenses() || [];
+    allExpenses.filter(e => isMatch(e.timestamp || e.date)).forEach(e => {
+      overallExpenses += parseFloat(e.amount || 0);
+    });
+  } catch(e) {
+    console.error("Error calculating expenses:", e);
+  }
+
+  const finalNetProfit = overallRevenue - overallCost - overallExpenses - overallSalaries;
 
   if (revenueEl) revenueEl.textContent = `${overallRevenue.toFixed(2)} ₾`;
   if (costEl) costEl.textContent = `${overallCost.toFixed(2)} ₾`;
-  if (profitEl) profitEl.textContent = `${overallProfit.toFixed(2)} ₾`;
-
-  // --- SMART SEARCH FILTER ---
-  let displayList = Object.values(productProfitMap);
-  if (searchQuery) {
-    const searchTerms = searchQuery.split(' ').filter(t => t.length > 0);
-    displayList = displayList.filter(p => {
-      // Break the product name into words
-      const nameWords = p.name.toLowerCase().split(/[\s\-()]+/);
-      
-      // Check if EVERY typed search word matches the START of any word in the product name
-      return searchTerms.every(term => 
-        nameWords.some(word => word.startsWith(term))
-      );
-    });
+  if (cashEl) cashEl.textContent = `${overallCash.toFixed(2)} ₾`;
+  if (cardEl) cardEl.textContent = `${overallCard.toFixed(2)} ₾`;
+  if (expEl) expEl.textContent = `${overallExpenses.toFixed(2)} ₾`;
+  if (salEl) salEl.textContent = `${overallSalaries.toFixed(2)} ₾`;
+  if (netProfitEl) {
+    netProfitEl.textContent = `${finalNetProfit.toFixed(2)} ₾`;
+    netProfitEl.style.color = finalNetProfit >= 0 ? '#2e7d32' : '#d9534f';
   }
 
-  displayList.sort((a, b) => (b.totalRevenue - b.totalCost) - (a.totalRevenue - a.totalCost));
+  transactionList.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-  tbody.innerHTML = displayList.map(p => {
-    const avgSellingPrice = p.sellingPriceCount > 0 ? (p.unitSellingPriceSum / p.sellingPriceCount) : 0;
-    const unitProfit = avgSellingPrice - p.unitCost;
-    const totalItemProfit = p.totalRevenue - p.totalCost;
+  tbody.innerHTML = transactionList.map(tx => `
+    <tr style="border-bottom: 1px solid #eee;">
+      <td style="padding: 10px; font-size: 13px; color: #555;">${tx.timestamp}</td>
+      <td style="padding: 10px;">${tx.userName}</td>
+      <td style="padding: 10px; max-width: 300px; overflow: hidden; text-overflow: ellipsis;" title="${tx.itemsText}">${tx.itemsText}</td>
+      <td style="padding: 10px; text-align: right;"><strong>${tx.total.toFixed(2)} ₾</strong></td>
+      <td style="padding: 10px; text-align: center;"><span class="badge" style="background:#e9ecef; padding: 4px 8px; border-radius: 4px; font-size: 12px;">${tx.methodLabel}</span></td>
+      <td style="padding: 10px; text-align: right; color: #2e7d32;"><strong>${tx.profit.toFixed(2)} ₾</strong></td>
+      <td style="padding: 10px; text-align: center;">
+        <button class="btn btn-outline btn-sm edit-tx-btn" data-id="${tx.id}" data-total="${tx.total}" data-method="${tx.method}" data-cash="${tx.cashAmount}" data-card="${tx.cardAmount}">რედაქტირება</button>
+      </td>
+    </tr>
+  `).join('') || `<tr><td colspan="7" style="text-align: center; padding: 20px; color: #777;">ამ პერიოდისთვის ტრანზაქციები არ მოიძებნა.</td></tr>`;
 
-    return `
-      <tr style="border-bottom: 1px solid #eee;">
-        <td style="padding: 10px;"><strong>${p.name}</strong></td>
-        <td style="padding: 10px; text-align: center;">${p.qty}</td>
-        <td style="padding: 10px; text-align: right;">${avgSellingPrice.toFixed(2)} ₾</td>
-        <td style="padding: 10px; text-align: right; color: #d9534f;">${p.unitCost.toFixed(2)} ₾</td>
-        <td style="padding: 10px; text-align: right; color: ${unitProfit >= 0 ? '#5cb85c' : '#d9534f'};">${unitProfit.toFixed(2)} ₾</td>
-        <td style="padding: 10px; text-align: right;"><strong>${totalItemProfit.toFixed(2)} ₾</strong></td>
-        <td style="padding: 10px; text-align: center;">
-          <div style="display: inline-flex; gap: 5px; justify-content: center;">
-            <button class="btn btn-outline btn-sm edit-profit-btn" data-name="${p.name}" data-cost="${p.unitCost}">რედაქტირება</button>
-            <button class="btn btn-danger btn-sm delete-profit-btn" data-name="${p.name}">წაშლა</button>
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join('') || `<tr><td colspan="7" style="text-align: center; padding: 20px; color: #777;">ამ პერიოდისთვის მონაცემები არ მოიძებნა.</td></tr>`;
-
-  // Attach Action Button Listeners dynamically after render
-  tbody.querySelectorAll('.edit-profit-btn').forEach(btn => {
+  tbody.querySelectorAll('.edit-tx-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const prodName = btn.dataset.name;
-      const currentCost = btn.dataset.cost;
+      const saleId = btn.dataset.id;
+      const total = parseFloat(btn.dataset.total);
+      const method = btn.dataset.method;
+      const cash = btn.dataset.cash;
+      const card = btn.dataset.card;
+
+      document.getElementById('edit-sale-id').value = saleId;
+      document.getElementById('edit-sale-total').value = total;
+      document.getElementById('edit-modal-total-display').textContent = total.toFixed(2) + ' ₾';
+      document.getElementById('edit-payment-method').value = method;
+      document.getElementById('edit-cash-amount').value = cash;
+      document.getElementById('edit-card-amount').value = card;
+
       
-      document.getElementById('edit-profit-original-name').value = prodName;
-      document.getElementById('edit-profit-name-display').textContent = prodName;
-      document.getElementById('edit-profit-cost').value = currentCost;
-      
-      document.getElementById('edit-profit-modal').classList.add('active');
-    });
-  });
 
-  tbody.querySelectorAll('.delete-profit-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const prodName = btn.dataset.name;
-      
-      // Warn the admin about what deleting from an analytics page actually means
-      if (confirm(`ყურადღება! ნამდვილად გსურთ წაშალოთ "${prodName}" მოგების ისტორიიდან?\n\nეს სამუდამოდ წაშლის ამ პროდუქტის ყველა გაყიდვას ისტორიიდან და შეცვლის თქვენს საერთო ფინანსურ მონაცემებს.`)) {
-        
-        let allSales = getSales();
-        let changed = false;
-
-        // Strip this specific product from all past receipts
-        allSales = allSales.map(s => {
-          if (s.items && s.items.length > 0) {
-            const originalLength = s.items.length;
-            s.items = s.items.filter(i => normalizeName(i.name) !== normalizeName(prodName));
-            if (s.items.length !== originalLength) changed = true;
-          }
-          return s;
-        });
-
-        // Filter out completely empty sales (where they only bought this one product)
-        allSales = allSales.filter(s => s.items && s.items.length > 0);
-
-        if (changed) {
-          saveSales(allSales); // Save updated history
-          const activeFilter = document.querySelector('.profit-filter.active')?.dataset.filter || 'today';
-          calculateAndRenderProfits(activeFilter);
-          alert(`"${prodName}" ამოშლილია ისტორიიდან.`);
-        }
+      const splitGroup = document.getElementById('split-amounts-group');
+      if (method === 'split') {
+        splitGroup.style.display = 'block';
+      } else {
+        splitGroup.style.display = 'none';
       }
+
+      document.getElementById('edit-transaction-modal').style.display = 'flex';
     });
   });
 }

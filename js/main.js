@@ -7,6 +7,7 @@ import { renderStockPage, getStock } from './stock.js';
 import { renderHistoryPage } from './history.js';
 import { renderShiftsPage } from './shifts.js';
 import { renderProfitPage } from './profit.js';
+import { renderUserManagementModal as renderUsersPage } from './userManagement.js';
 import { initBackup } from './backup.js';
 import { syncFromDiskOnLoad } from './dbSync.js';
 
@@ -19,6 +20,18 @@ function showLogin() {
   if (loginScreen) loginScreen.classList.remove('hidden');
   if (appScreen) appScreen.classList.add('hidden');
   if (liveTimeInterval) clearInterval(liveTimeInterval);
+
+  // Clear username and password fields upon logout/exit
+  const usernameInput = document.getElementById('login-username');
+  const passwordInput = document.getElementById('login-password');
+  const errorEl = document.getElementById('login-error');
+
+  if (usernameInput) usernameInput.value = '';
+  if (passwordInput) passwordInput.value = '';
+  if (errorEl) {
+    errorEl.textContent = '';
+    errorEl.classList.add('hidden');
+  }
 }
 
 function showApp() {
@@ -27,6 +40,12 @@ function showApp() {
 
   if (loginScreen) loginScreen.classList.add('hidden');
   if (appScreen) appScreen.classList.remove('hidden');
+
+  // Toggle visibility of the Users page link in the sidebar based on admin status
+  const usersLink = document.getElementById('nav-users-link');
+  if (usersLink) {
+    usersLink.style.display = isAdmin() ? 'block' : 'none';
+  }
 
   updateHeader();
   navigateTo('cashier');
@@ -89,6 +108,12 @@ export function navigateTo(page) {
     return;
   }
 
+  if (page === 'users' && !isAdmin()) {
+    alert('მომხმარებლების გვერდი ხელმისაწვდომია მხოლოდ ადმინისთვის');
+    navigateTo('cashier');
+    return;
+  }
+
   switch (page) {
     case 'cashier':
       renderCashierPage();
@@ -107,6 +132,9 @@ export function navigateTo(page) {
       break;
     case 'profit':
       renderProfitPage();
+      break;
+    case 'users':
+      renderUsersPage();
       break;
     default:
       renderCashierPage();
